@@ -5,7 +5,7 @@
 // rich enough a human gets every flag and example. Killer flow always
 // appears in the root help, no scrolling required.
 
-export const VERSION = "0.0.7";
+export const VERSION = "0.0.8";
 
 interface CommandHelp {
   synopsis: string;
@@ -99,7 +99,7 @@ Non-GitHub URLs (official doc sites with sitemap.xml) land in Phase 2 via
   },
 
   session: {
-    synopsis: "List / show / resume coding-agent sessions across all harnesses",
+    synopsis: "List / show / resume coding-agent sessions across all harnesses (claude·pi·codex·cursor·gemini·bob)",
     usage: [
       "lescout session list [--limit N] [--project SUBSTR] [--agent NAME]",
       "lescout session show <chat-id>",
@@ -116,7 +116,7 @@ Brain slug: sessions/<flat-project>/<date>-<short-id> (gbrain caps at 2 slashes)
     flags: [
       { flag: "--limit N", desc: "Cap results (default 20)" },
       { flag: "--project SUBSTR", desc: "Filter by cwd substring (case-insensitive)" },
-      { flag: "--agent NAME", desc: "Filter: claude|pi|codex|cursor|gemini" },
+      { flag: "--agent NAME", desc: "Filter: claude|pi|codex|cursor|gemini|bob" },
       { flag: "--table", desc: "One-line table (default: card view on narrow terms)" },
       { flag: "--cards", desc: "Force card view (default on terminals < 140 cols)" },
     ],

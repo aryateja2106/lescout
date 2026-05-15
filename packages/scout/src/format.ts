@@ -29,6 +29,8 @@ export function agentColor(agent: string): (s: string) => string {
       return cyan;
     case "gemini":
       return blue;
+    case "bob":
+      return yellow;
     default:
       return (s: string) => s;
   }

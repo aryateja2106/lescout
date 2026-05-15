@@ -7,6 +7,11 @@
 //                + ~/.codex/archived_sessions/rollout-<ts>-<uuid>.jsonl
 //   cursor  ~/.cursor/chats/<hash>/                    (parse deferred)
 //   gemini  ~/.gemini/history/<workspace>/             (parse deferred)
+//   bob     ~/.bob/tmp/<workspace-hash>/chats/*        (parse deferred — added 0.0.8)
+//
+// To add a NEW coding agent, append to the Agent union and add a discovery
+// branch in listSessions(). If JSONL-compatible, set parserSupport="full";
+// otherwise "meta-only" until a parser ships.
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -19,8 +24,9 @@ const CODEX_ROOT = join(HOME, ".codex", "sessions");
 const CODEX_ARCHIVE = join(HOME, ".codex", "archived_sessions");
 const CURSOR_ROOT = join(HOME, ".cursor", "chats");
 const GEMINI_ROOT = join(HOME, ".gemini", "history");
+const BOB_ROOT = join(HOME, ".bob", "tmp");
 
-export type Agent = "claude" | "pi" | "codex" | "cursor" | "gemini";
+export type Agent = "claude" | "pi" | "codex" | "cursor" | "gemini" | "bob";
 
 export interface SessionMeta {
   agent: Agent;
@@ -148,6 +154,29 @@ export async function listSessions(
     }
   }
 
+  if (wantAgent("bob")) {
+    // bob layout: ~/.bob/tmp/<projectHash>/chats/session-<ts>-<shortid>.json
+    // Each file is a single JSON object: { sessionId, projectHash, startTime,
+    // lastUpdated, messages: [{role, content}] }. Format is clean enough for
+    // full parser support — see quickMetaBobJson() + loadBobSession().
+    for (const hash of await readdir(BOB_ROOT).catch(() => [])) {
+      if (hash === "bin") continue; // bob caches helper binaries here
+      const chatsDir = join(BOB_ROOT, hash, "chats");
+      const chatsStat = await stat(chatsDir).catch(() => null);
+      if (!chatsStat || !chatsStat.isDirectory()) continue;
+      const files = await readdir(chatsDir).catch(() => []);
+      const bobProjectFilter = matchProj(hash) || matchProj(`bob_${hash.slice(0, 12)}`);
+      for (const f of files) {
+        if (!f.endsWith(".json")) continue;
+        const filePath = join(chatsDir, f);
+        const meta = await quickMetaBobJson(filePath, hash);
+        if (!meta) continue;
+        if (!bobProjectFilter && !matchProj(meta.chatId)) continue;
+        all.push(meta);
+      }
+    }
+  }
+
   all.sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""));
   return opts.limit ? all.slice(0, opts.limit) : all;
 }
@@ -162,6 +191,64 @@ function cleanTitle(raw: string): string {
   s = s.replace(/^Caveat:[^.]+\.\s*/i, "");
   s = s.replace(/^```[a-z]*\s+/i, "");
   return s.slice(0, 80);
+}
+
+async function quickMetaBobJson(jsonPath: string, projectHash: string): Promise<SessionMeta | null> {
+  let st;
+  try {
+    st = await stat(jsonPath);
+  } catch {
+    return null;
+  }
+  if (st.size === 0) return null;
+
+  let title: string | null = null;
+  let startedAt: string | null = null;
+  let endedAt: string | null = null;
+  let chatId = basename(jsonPath, ".json");
+  let lineCount = 0;
+  let cwd = "";
+
+  try {
+    const text = await readFile(jsonPath, "utf8");
+    const d = JSON.parse(text);
+    if (typeof d.sessionId === "string") chatId = d.sessionId;
+    if (typeof d.startTime === "string") startedAt = d.startTime;
+    if (typeof d.lastUpdated === "string") endedAt = d.lastUpdated;
+    if (typeof d.cwd === "string") cwd = d.cwd;
+    if (Array.isArray(d.messages)) {
+      lineCount = d.messages.length;
+      for (const m of d.messages) {
+        // Bob uses `type` as the role field (not `role`).
+        if (m?.type === "user" || m?.role === "user") {
+          const c = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content[0]?.text ?? "" : "";
+          if (c) {
+            title = cleanTitle(String(c));
+            break;
+          }
+        }
+      }
+    }
+  } catch {
+    /* malformed JSON — fall back to filesystem metadata */
+  }
+
+  return {
+    agent: "bob",
+    chatId,
+    shortId: chatId.slice(0, 8),
+    jsonlPath: jsonPath,
+    // projectDir is the bare workspace hash; sessionSlug() will prefix with
+    // the agent name to avoid double-`bob_bob_` slugs.
+    projectDir: projectHash.slice(0, 12),
+    cwd,
+    title,
+    startedAt: startedAt ?? st.birthtime.toISOString(),
+    endedAt: endedAt ?? st.mtime.toISOString(),
+    lineCount,
+    sizeBytes: st.size,
+    parserSupport: "full",
+  };
 }
 
 async function readCodexCwd(jsonlPath: string): Promise<string | null> {
@@ -312,6 +399,9 @@ export async function resolveSession(idOrPath: string): Promise<SessionMeta | nu
 
 /** Parse a session's JSONL into a structured detail object. */
 export async function loadSession(meta: SessionMeta): Promise<SessionDetail> {
+  // Bob ships one JSON object per session, not JSONL. Route to its loader.
+  if (meta.agent === "bob") return loadBobSession(meta);
+
   const text = await readFile(meta.jsonlPath, "utf8");
   const lines = text.split("\n").filter(Boolean);
 
@@ -415,7 +505,7 @@ export function renderSessionPage(d: SessionDetail): string {
     `user_turns: ${d.allUserMessages.length}`,
     `assistant_chunks: ${d.assistantTextChunks.length}`,
     `tool_calls: ${totalTools}`,
-    `tags: [session, claude-code]`,
+    `tags: [session, ${d.agent}]`,
     "---",
     "",
   ].join("\n");
@@ -423,7 +513,7 @@ export function renderSessionPage(d: SessionDetail): string {
   const body: string[] = [];
   body.push(`# ${title}`);
   body.push("");
-  body.push(`> Claude Code session \`${d.shortId}\` · ${d.cwd}`);
+  body.push(`> ${agentLabel(d.agent)} session \`${d.shortId}\`${d.cwd ? ` · ${d.cwd}` : ""}`);
   body.push(`> ${minutes} min · ${d.allUserMessages.length} user turns · ${totalTools} tool calls`);
   body.push("");
 
@@ -479,11 +569,82 @@ export function renderSessionPage(d: SessionDetail): string {
   return frontmatter + body.join("\n");
 }
 
+function agentLabel(a: Agent): string {
+  switch (a) {
+    case "claude":
+      return "Claude Code";
+    case "pi":
+      return "Pi";
+    case "codex":
+      return "Codex";
+    case "cursor":
+      return "Cursor";
+    case "gemini":
+      return "Gemini";
+    case "bob":
+      return "Bob Shell";
+  }
+}
+
 function quoteBlock(s: string): string {
   return s
     .split("\n")
     .map((ln) => `> ${ln}`)
     .join("\n");
+}
+
+async function loadBobSession(meta: SessionMeta): Promise<SessionDetail> {
+  const text = await readFile(meta.jsonlPath, "utf8");
+  const d = JSON.parse(text);
+
+  const allUserMessages: string[] = [];
+  const assistantTextChunks: string[] = [];
+  const toolCounts: Record<string, number> = {};
+  let totalAssistantChars = 0;
+
+  if (Array.isArray(d.messages)) {
+    for (const m of d.messages) {
+      // Bob uses `type` for role. Treat "bob-shell" as assistant.
+      const role = m?.type ?? m?.role;
+      const c = typeof m?.content === "string" ? m.content : "";
+      if (role === "user" && c.trim().length > 0) {
+        allUserMessages.push(c);
+      } else if (role === "bob-shell" || role === "assistant") {
+        assistantTextChunks.push(c);
+        totalAssistantChars += c.length;
+        // Bob ships explicit tool calls in `toolCalls: [{ name, args, result }]`.
+        if (Array.isArray(m?.toolCalls)) {
+          for (const tc of m.toolCalls) {
+            const name = String(tc?.name ?? "?");
+            toolCounts[name] = (toolCounts[name] ?? 0) + 1;
+          }
+        }
+        // Older transcripts encode them inline as "[using tool <name>:".
+        const toolMatches = c.match(/\[using tool ([a-z_]+)/gi) ?? [];
+        for (const tm of toolMatches) {
+          const name = tm.replace(/^\[using tool /i, "");
+          toolCounts[name] = (toolCounts[name] ?? 0) + 1;
+        }
+      }
+    }
+  }
+
+  const durationMs =
+    meta.startedAt && meta.endedAt
+      ? new Date(meta.endedAt).getTime() - new Date(meta.startedAt).getTime()
+      : 0;
+
+  return {
+    ...meta,
+    firstUserMessage: allUserMessages[0] ?? "",
+    lastAssistantText: assistantTextChunks[assistantTextChunks.length - 1] ?? "",
+    allUserMessages,
+    assistantTextChunks,
+    toolCounts,
+    filesTouched: [],
+    totalAssistantChars,
+    durationMs,
+  };
 }
 
 export function sessionSlug(d: SessionMeta): string {
