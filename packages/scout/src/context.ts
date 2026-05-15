@@ -169,7 +169,11 @@ export async function buildContext(target: string, opts: ContextOptions = {}): P
     brainSlug = `context/${safeTarget}/${date}`;
     try {
       await brainPut(brainSlug, body);
-    } catch {
+    } catch (e) {
+      // gbrain binary missing is hard-failure (matches query side).
+      if (e instanceof GbrainUnavailableError) throw e;
+      // Anything else (slug rejected, transient) — disk file is still the
+      // source of truth, just drop the brain slug.
       brainSlug = undefined;
     }
   }
@@ -214,6 +218,18 @@ function pathHint(target: string): string {
 
 // ──────────────────────────── gbrain shell-outs ────────────────────────────
 
+/**
+ * Thrown when the gbrain binary is not installed / not on PATH. We surface
+ * this so `lescout context` fails loudly instead of writing a 0-page bundle
+ * and pretending everything is fine.
+ */
+export class GbrainUnavailableError extends Error {
+  constructor(msg: string) {
+    super(msg);
+    this.name = "GbrainUnavailableError";
+  }
+}
+
 function runGbrain(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(GBRAIN_BIN, args, { stdio: ["ignore", "pipe", "pipe"] });
@@ -221,7 +237,18 @@ function runGbrain(args: string[]): Promise<string> {
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d.toString()));
     child.stderr.on("data", (d) => (stderr += d.toString()));
-    child.on("error", reject);
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "ENOENT") {
+        reject(
+          new GbrainUnavailableError(
+            `gbrain binary not found (looked for: ${GBRAIN_BIN}). ` +
+              `Install gbrain or set GBRAIN_BIN to its path.`,
+          ),
+        );
+      } else {
+        reject(err);
+      }
+    });
     child.on("close", (code) => {
       if (code === 0) resolve(stdout);
       else reject(new Error(`gbrain ${args.join(" ")} exited ${code}\n${stderr}`));
@@ -242,13 +269,15 @@ async function brainQuery(q: string, limit: number): Promise<BrainHit[]> {
         chunkText: String(r.chunk_text ?? r.content ?? ""),
       }));
     }
-  } catch {
+  } catch (e) {
+    if (e instanceof GbrainUnavailableError) throw e;
     // gbrain query may not support --json. Fallback: parse plain text.
   }
   try {
     const out = await runGbrain(["query", q, "--limit", String(limit)]);
     return parsePlainQuery(out);
-  } catch {
+  } catch (e) {
+    if (e instanceof GbrainUnavailableError) throw e;
     return [];
   }
 }
@@ -283,7 +312,8 @@ async function brainListByPrefix(prefix: string, limit: number, grep: string): P
     }
     hits.sort((a, b) => b.score - a.score);
     return hits.slice(0, limit);
-  } catch {
+  } catch (e) {
+    if (e instanceof GbrainUnavailableError) throw e;
     return [];
   }
 }
@@ -303,7 +333,8 @@ function matchScoreFor(slug: string, title: string, target: string): number {
 async function brainGet(slug: string): Promise<string | null> {
   try {
     return await runGbrain(["get", slug]);
-  } catch {
+  } catch (e) {
+    if (e instanceof GbrainUnavailableError) throw e;
     return null;
   }
 }
@@ -320,7 +351,18 @@ async function brainPut(slug: string, markdown: string): Promise<void> {
     const child = spawn(GBRAIN_BIN, ["put", slug], { stdio: ["pipe", "pipe", "pipe"] });
     let stderr = "";
     child.stderr.on("data", (d) => (stderr += d.toString()));
-    child.on("error", reject);
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "ENOENT") {
+        reject(
+          new GbrainUnavailableError(
+            `gbrain binary not found (looked for: ${GBRAIN_BIN}). ` +
+              `Install gbrain or set GBRAIN_BIN to its path.`,
+          ),
+        );
+      } else {
+        reject(err);
+      }
+    });
     child.on("close", (code) => {
       if (code === 0) resolve();
       else reject(new Error(`gbrain put ${slug} exited ${code}\n${stderr}`));

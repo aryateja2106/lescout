@@ -15,6 +15,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, basename } from "node:path";
 import { listSkills, type SkillMeta } from "./skills.ts";
+import { redactEnv } from "./redact.ts";
 
 const HOME = homedir();
 
@@ -207,6 +208,11 @@ function mcpFromDef(scope: string, id: string, def: unknown): ArtifactMeta {
   const d = (def as Record<string, unknown>) ?? {};
   const command = String(d.command ?? "");
   const args = Array.isArray(d.args) ? (d.args as unknown[]).map(String) : [];
+  // SECURITY: env values almost always carry API keys/tokens. Redact every
+  // value (keys are kept — they're what the user needs to debug). See
+  // packages/scout/src/redact.ts and Plans/CONTEXT-DISCIPLINE.md.
+  const rawEnv = (d.env as Record<string, unknown>) ?? {};
+  const env = redactEnv(rawEnv);
   return {
     type: "mcp",
     id,
@@ -215,7 +221,7 @@ function mcpFromDef(scope: string, id: string, def: unknown): ArtifactMeta {
     description: command ? `${command} ${args.join(" ")}` : `(${scope} mcp ${id})`,
     version: null,
     bodyTokensApprox: 0,
-    extras: { command, args, env: d.env ?? {} },
+    extras: { command, args, env },
   };
 }
 

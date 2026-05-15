@@ -104,7 +104,8 @@ export async function listSessions(
       const proj = cwdHint ?? "codex_global";
       const m = await quickMetaJsonl(f, proj, "codex");
       if (m && cwdHint) m.cwd = cwdHint.replace(/_/g, "/");
-      if (m) all.push(m);
+      // Apply --project filter to codex sessions (was missing before).
+      if (m && matchProj(m.projectDir)) all.push(m);
     }
   }
 
@@ -208,10 +209,15 @@ async function quickMetaBobJson(jsonPath: string, projectHash: string): Promise<
   let chatId = basename(jsonPath, ".json");
   let lineCount = 0;
   let cwd = "";
+  // Track whether the JSON parse actually succeeded. If it didn't, the
+  // session is degraded — list it as `meta-only` so callers (show/resume)
+  // know to refuse to load it instead of crashing on a second JSON.parse.
+  let jsonParseOk = false;
 
   try {
     const text = await readFile(jsonPath, "utf8");
     const d = JSON.parse(text);
+    jsonParseOk = true;
     if (typeof d.sessionId === "string") chatId = d.sessionId;
     if (typeof d.startTime === "string") startedAt = d.startTime;
     if (typeof d.lastUpdated === "string") endedAt = d.lastUpdated;
@@ -230,7 +236,7 @@ async function quickMetaBobJson(jsonPath: string, projectHash: string): Promise<
       }
     }
   } catch {
-    /* malformed JSON — fall back to filesystem metadata */
+    /* malformed JSON — fall back to filesystem metadata, mark degraded */
   }
 
   return {
@@ -247,7 +253,7 @@ async function quickMetaBobJson(jsonPath: string, projectHash: string): Promise<
     endedAt: endedAt ?? st.mtime.toISOString(),
     lineCount,
     sizeBytes: st.size,
-    parserSupport: "full",
+    parserSupport: jsonParseOk ? "full" : "meta-only",
   };
 }
 

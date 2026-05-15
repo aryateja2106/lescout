@@ -5,7 +5,7 @@
 // rich enough a human gets every flag and example. Killer flow always
 // appears in the root help, no scrolling required.
 
-export const VERSION = "0.0.10";
+export const VERSION = "0.0.11";
 
 interface CommandHelp {
   synopsis: string;
