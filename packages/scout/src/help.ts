@@ -5,7 +5,7 @@
 // rich enough a human gets every flag and example. Killer flow always
 // appears in the root help, no scrolling required.
 
-export const VERSION = "0.0.6";
+export const VERSION = "0.0.7";
 
 interface CommandHelp {
   synopsis: string;
@@ -117,6 +117,8 @@ Brain slug: sessions/<flat-project>/<date>-<short-id> (gbrain caps at 2 slashes)
       { flag: "--limit N", desc: "Cap results (default 20)" },
       { flag: "--project SUBSTR", desc: "Filter by cwd substring (case-insensitive)" },
       { flag: "--agent NAME", desc: "Filter: claude|pi|codex|cursor|gemini" },
+      { flag: "--table", desc: "One-line table (default: card view on narrow terms)" },
+      { flag: "--cards", desc: "Force card view (default on terminals < 140 cols)" },
     ],
     examples: [
       { cmd: "lescout session list --limit 10" },

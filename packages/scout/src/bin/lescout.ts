@@ -14,6 +14,7 @@ import {
 import { writeToBrain } from "../brain.ts";
 import { renderHelp, VERSION } from "../help.ts";
 import { buildContext } from "../context.ts";
+import { agentColor, bold, dim, gray, smartTruncate, termWidth } from "../format.ts";
 
 function hasFlag(args: string[], ...names: string[]): boolean {
   return args.some((a) => names.includes(a));
@@ -142,35 +143,20 @@ async function runSession(rest: string[]): Promise<number> {
     const limit = getNum(rest, "--limit") ?? 20;
     const projectFilter = getOpt(rest, "--project");
     const agentFilter = getOpt(rest, "--agent") as Agent | undefined;
+    const useTable = rest.includes("--table");
     const sessions = await listSessions({ limit, projectFilter, agentFilter });
 
     if (sessions.length === 0) {
-      console.log("(no sessions found)");
+      console.log(dim("(no sessions found)"));
       return 0;
     }
 
-    const HEAD = ["SHORT", "AGENT", "DATE", "LINES", "PROJECT", "TITLE"];
-    const WIDTHS = [10, 8, 12, 8, 32, 0];
-    console.log(HEAD.map((h, i) => (WIDTHS[i] ? h.padEnd(WIDTHS[i]) : h)).join(""));
-    for (const s of sessions) {
-      const date = (s.startedAt ?? "").slice(0, 10);
-      const proj = s.projectDir
-        .replace(/^-Users-aryateja-/, "")
-        .replace(/^-+/, "")
-        .replace(/-/g, "/")
-        .slice(0, 30);
-      const title = (s.title ?? "").replace(/\n/g, " ").trim().slice(0, 60);
-      console.log(
-        [
-          s.shortId.padEnd(WIDTHS[0]!),
-          s.agent.padEnd(WIDTHS[1]!),
-          date.padEnd(WIDTHS[2]!),
-          String(s.lineCount).padEnd(WIDTHS[3]!),
-          proj.padEnd(WIDTHS[4]!),
-          title,
-        ].join(""),
-      );
-    }
+    const width = termWidth();
+
+    // Auto: card format on narrow terminals; table on wide. --table forces table.
+    const wantsTable = useTable || (width >= 140 && !rest.includes("--cards"));
+    if (wantsTable) printSessionTable(sessions, width);
+    else printSessionCards(sessions, width);
     return 0;
   }
 
@@ -229,6 +215,85 @@ async function runSession(rest: string[]): Promise<number> {
   console.error(`error: unknown session subcommand: ${sub ?? "(missing)"}`);
   console.error("try: lescout help session");
   return 2;
+}
+
+// ----- session list formatters -----
+
+function normalizeProject(projectDir: string): string {
+  return projectDir
+    .replace(/^-Users-aryateja-/, "")
+    .replace(/^-+/, "")
+    .replace(/-/g, "/");
+}
+
+function printSessionCards(sessions: Awaited<ReturnType<typeof listSessions>>, width: number): void {
+  for (const s of sessions) {
+    const color = agentColor(s.agent);
+    const date = (s.startedAt ?? "").slice(0, 10);
+    const proj = normalizeProject(s.projectDir);
+    const title = (s.title ?? "").replace(/\n/g, " ").trim();
+
+    // Header line: ● id  agent  date  N lines  project
+    const dot = color("●");
+    const idCell = bold(s.shortId);
+    const agentCell = color(s.agent.padEnd(7));
+    const dateCell = dim(date);
+    const linesCell = dim(`${String(s.lineCount).padStart(4)} lines`);
+    const projCell = gray(proj);
+    const head = `${dot} ${idCell}  ${agentCell} ${dateCell}  ${linesCell}  ${projCell}`;
+    console.log(head);
+
+    // Title line: indented, dimmed, smart-truncated to terminal width.
+    if (title) {
+      const titleLine = `  ${smartTruncate(title, Math.max(20, width - 4))}`;
+      console.log(dim(titleLine));
+    }
+  }
+  console.log("");
+  console.log(
+    dim(
+      `${sessions.length} sessions · use ——  lescout session list --limit N  ·  --agent claude|pi|codex|cursor|gemini  ·  --table for one-line rows`,
+    ),
+  );
+}
+
+function printSessionTable(sessions: Awaited<ReturnType<typeof listSessions>>, width: number): void {
+  // Allocate column widths roughly: short=10 agent=8 date=12 lines=7 project=28 title=rest.
+  const shortW = 10;
+  const agentW = 8;
+  const dateW = 12;
+  const linesW = 7;
+  const projW = 28;
+  const titleW = Math.max(20, width - (shortW + agentW + dateW + linesW + projW));
+
+  // Header: dim, no color
+  console.log(
+    dim(
+      "SHORT".padEnd(shortW) +
+        "AGENT".padEnd(agentW) +
+        "DATE".padEnd(dateW) +
+        "LINES".padEnd(linesW) +
+        "PROJECT".padEnd(projW) +
+        "TITLE",
+    ),
+  );
+
+  for (const s of sessions) {
+    const color = agentColor(s.agent);
+    const date = (s.startedAt ?? "").slice(0, 10);
+    const proj = normalizeProject(s.projectDir).slice(0, projW - 2);
+    const title = (s.title ?? "").replace(/\n/g, " ").trim();
+
+    // Important: pad BEFORE wrapping in ANSI so width math stays right.
+    const shortP = s.shortId.padEnd(shortW);
+    const agentP = s.agent.padEnd(agentW);
+    const dateP = date.padEnd(dateW);
+    const linesP = String(s.lineCount).padEnd(linesW);
+    const projP = proj.padEnd(projW);
+    const titleT = smartTruncate(title, titleW);
+
+    console.log(`${shortP}${color(agentP)}${dim(dateP)}${linesP}${gray(projP)}${dim(titleT)}`);
+  }
 }
 
 const code = await main();
