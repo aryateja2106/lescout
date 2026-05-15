@@ -1,0 +1,16 @@
+{
+  "name": "@lescout/scout",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Sandboxed repo/URL ingestion for LeScout",
+  "bin": {
+    "lescout": "./src/bin/lescout.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "echo 'no build needed; Bun runs ts directly'",
+    "test": "bun test"
+  }
+}

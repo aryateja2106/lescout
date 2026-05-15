@@ -1,0 +1,17 @@
+{
+  "name": "lescout",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Less Scout, More Context — sandboxed scouting + always-on knowledge brain across all your agents",
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "bun run --filter '*' build",
+    "typecheck": "tsc -b",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,16 @@
+#!/bin/sh
+# lescout — convenience wrapper. Symlink-safe: resolves real path before exec.
+set -e
+
+# Resolve real path even if invoked through a symlink (BSD readlink lacks -f).
+SELF="$0"
+while [ -L "$SELF" ]; do
+  TARGET=$(readlink "$SELF")
+  case "$TARGET" in
+    /*) SELF="$TARGET" ;;
+    *)  SELF="$(dirname "$SELF")/$TARGET" ;;
+  esac
+done
+
+ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
+exec bun "$ROOT/packages/scout/src/bin/lescout.ts" "$@"
