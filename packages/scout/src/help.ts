@@ -1,7 +1,7 @@
 // help.ts — structured help texts. Agents call `lescout help` or
 // `lescout <cmd> --help` to self-discover capabilities.
 
-export const VERSION = "0.0.3";
+export const VERSION = "0.0.4";
 
 interface CommandHelp {
   synopsis: string;
@@ -14,6 +14,34 @@ interface CommandHelp {
 }
 
 const COMMANDS: Record<string, CommandHelp> = {
+  context: {
+    synopsis: "Caveman-compress: gather everything about a target into one dense file",
+    usage: ["lescout context <target> [--tokens N] [--no-brain]"],
+    description: `Hybrid-search across your GBrain for a target (project name, repo, topic)
+and assemble the most relevant pages, repos, sessions, and concepts into ONE
+compact markdown bundle under a token budget.
+
+Use case: fresh agent (Claude / Cursor / Codex / Gemini) starts on project X.
+Instead of re-explaining, run \`lescout context X\` and load the resulting file
+as the first message. Dense context, no bloat.
+
+Written to:
+  ~/.lescout/context/<target>-<date>.md
+And by default to the brain at:
+  context/<target>/<date>
+so every other agent can fetch via gbrain query or mcp__gbrain__query.`,
+    flags: [
+      { flag: "--tokens N", desc: "Token budget (default 30000)" },
+      { flag: "--no-brain", desc: "Skip writing the bundle back to the brain" },
+    ],
+    examples: [
+      { cmd: "lescout context lockshell", what: "30K-token bundle on lockshell" },
+      { cmd: "lescout context lesearch --tokens 50000", what: "Bigger budget for bigger project" },
+      { cmd: "lescout context agentmemory --no-brain", what: "Local file only, skip brain write" },
+    ],
+    seeAlso: ["lescout help repo", "lescout help session"],
+  },
+
   __root__: {
     synopsis: "Less Scout, More Context — sandboxed scouting + brain-backed retrieval for every agent",
     usage: [

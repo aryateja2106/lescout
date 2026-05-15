@@ -13,6 +13,7 @@ import {
 } from "../session.ts";
 import { writeToBrain } from "../brain.ts";
 import { renderHelp, VERSION } from "../help.ts";
+import { buildContext } from "../context.ts";
 
 function hasFlag(args: string[], ...names: string[]): boolean {
   return args.some((a) => names.includes(a));
@@ -65,6 +66,9 @@ async function main() {
   // ----- session -----
   if (cmd === "session") return runSession(rest);
 
+  // ----- context (caveman-compress) -----
+  if (cmd === "context") return runContext(rest);
+
   console.error(`unknown command: ${cmd}`);
   console.error(`try: lescout help`);
   return 2;
@@ -96,6 +100,37 @@ async function runScout(rest: string[], kind: "repo" | "docs"): Promise<number> 
     return 0;
   } catch (err) {
     console.error(`✗ failed: ${(err as Error).message.slice(0, 600)}`);
+    return 1;
+  }
+}
+
+async function runContext(rest: string[]): Promise<number> {
+  const target = rest.find((a) => !a.startsWith("-"));
+  if (!target) {
+    console.error("error: lescout context <target>");
+    return 2;
+  }
+  const tokenBudget = getNum(rest, "--tokens") ?? 30000;
+  const writeToBrain = !rest.includes("--no-brain");
+
+  console.log(`▸ assembling context bundle for "${target}" (budget ${tokenBudget} tokens)`);
+  try {
+    const r = await buildContext(target, { tokenBudget, writeToBrain });
+    console.log(`✓ done`);
+    console.log(`  file:           ${r.outPath}`);
+    console.log(`  pages bundled:  ${r.pagesIncluded}`);
+    console.log(`  size:           ~${r.estTokens} tokens (${r.estChars} chars)`);
+    if (r.brainSlug) console.log(`  brain slug:     ${r.brainSlug}`);
+    console.log("");
+    console.log(`Load in any agent:`);
+    console.log(`  Read ${r.outPath} before answering anything.`);
+    if (r.brainSlug) {
+      console.log(`Or via brain:`);
+      console.log(`  gbrain get ${r.brainSlug}`);
+    }
+    return 0;
+  } catch (err) {
+    console.error(`✗ failed: ${(err as Error).message.slice(0, 500)}`);
     return 1;
   }
 }

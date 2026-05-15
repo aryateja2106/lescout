@@ -1,20 +1,32 @@
 # LeScout
 
-> Less Scout, More Context.
+> Part of the **LeSearch AI** product family. **Less Search, More Agents.**
 
-A two-half personal knowledge stack — **sandboxed scouting** + **always-on hybrid-search brain** — that follows you across machines (Mac, Linux, Raspberry Pi 5) and feeds every agent harness (pi, Claude Code, Cursor, Codex, Gemini, Amp).
+LeScout is the **ingestion + context-loader** layer. Sandboxed scouting +
+caveman-compress context bundles, fed into the GBrain MCP so every agent on
+every machine reads from the same brain.
+
+Sibling tools (planned, same brand):
+
+- **LeBrain** — unified brain layer over GBrain (Phase 4)
+- **LeMem** — per-session 100K context discipline + auto-checkpoint (Phase 3)
+- **LeLoop** — personal software factory: idea → autonomous prototype → Ralph loop (Phase 6)
+
+See `Plans/BRAND.md` for the full product family + Personal Software Factory thesis.
 
 ## Status
 
 ```
 Phase 0    ✓  GBrain wired as interim brain (Claude Code + pi MCP)
 Phase 1    ✓  Sandbox + `lescout repo` end-to-end
-Phase 1.5  ✓  Multi-agent session discovery + `lescout session` (claude/pi/codex/cursor/gemini)
+Phase 1.5  ✓  Multi-agent session discovery + `lescout session`
 Phase 1.6  ✓  Hierarchical `--help` + `lescout docs <github-url>`
-Phase 2    ⏳  SearXNG + `lescout search` / `lescout grok` + dual md/html storage
-Phase 3    ⏳  MCP adapter (Claude Code / Cursor native tool)
-Phase 4    ⏳  LeScout native brain (SQLite + FTS5)
+Phase 1.7  ✓  `lescout context` — caveman-compress bundles for fresh agents
+Phase 2    ⏳  `lescout grok <url>` + SearXNG + dual md/html storage
+Phase 3    ⏳  MCP adapter + LeMem auto-checkpoint hooks
+Phase 4    ⏳  LeBrain native brain (SQLite + FTS5)
 Phase 5    ⏳  Pi-5 deployment + Tailscale remote MCP
+Phase 6    ⏳  LeLoop Personal Software Factory
 ```
 
 ## Quickstart
@@ -34,6 +46,12 @@ lescout docs https://github.com/colinhacks/zod        # scout as docs (different
 lescout session list --limit 10                       # claude/pi/codex/cursor/gemini
 lescout session list --agent codex --project mconnect
 lescout session resume <chat-id>                      # pick up where you left off
+
+# 5. THE KILLER FLOW — caveman-compress one project's brain into one file:
+lescout context lockshell                             # 30K-token bundle written to disk + brain
+# In any fresh agent (Claude / Cursor / Codex / Gemini):
+#   "Read ~/.lescout/context/lockshell-<date>.md before answering anything."
+# → agent loads dense context once, then acts. No re-deriving, no bloat.
 
 # 5. Self-discoverable: agents call --help to learn the surface
 lescout help                                          # full reference
