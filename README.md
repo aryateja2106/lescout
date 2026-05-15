@@ -146,6 +146,30 @@ Default scan roots:
 - `~/.claude/skills/`
 - `$LESCOUT_SKILL_PATH` (colon-separated extra roots)
 
+### Unified artifact registry (`lescout store`)
+
+The meta-tool that covers ALL five artifact types across every coding
+agent on the host: **skills + MCPs + hooks + plugins + extensions**. This
+is the read MVP — install / remove / sync come in Phase 2 (see
+[`Plans/LESTORE.md`](Plans/LESTORE.md)).
+
+```bash
+lescout store roots                            # every directory we scan + exists status
+lescout store list                             # one normalised table across all 5 types
+lescout store list --type mcp                  # only MCP servers (from .claude.json,
+                                               # .cursor/mcp.json, .codex/config.toml,
+                                               # .bob/settings.json)
+lescout store list --type extension            # pi-style extensions
+lescout store list --agent claude              # only artifacts scoped to one agent
+lescout store search 'fix a broken build'      # ranked across every type
+lescout store info <id>                        # manifest for one artifact
+```
+
+LeStore is intentionally agent-agnostic in its data model. Today it reads
+from existing scattered locations; Phase 2 introduces `~/.lestore/` as a
+canonical single-source-of-truth volume with a symlink farm into every
+agent's expected path.
+
 ---
 
 ## What `lescout repo` actually does
@@ -240,6 +264,8 @@ Phase 1.6  ✓  Hierarchical `--help` + `lescout docs <github-url>`
 Phase 1.7  ✓  `lescout context` — caveman-compress bundles for fresh agents
 Phase 1.8  ✓  IBM Bob adapter — multi-agent session discovery covers 6 harnesses
 Phase 1.9  ✓  `lescout skills` — progressive disclosure for agent skill files
+Phase 1.10 ✓  `lescout store` — unified artifact registry (read MVP) for skills + mcps + hooks + plugins + extensions
+Phase 2    ⏳  LeStore install/remove/sync (Phase 2 of LESTORE.md)
 Phase 2    ⏳  `lescout grok <url>` + SearXNG + dual md/html storage
 Phase 3    ⏳  MCP adapter + LeMem auto-checkpoint hooks
 Phase 4    ⏳  LeBrain native brain (SQLite + FTS5)

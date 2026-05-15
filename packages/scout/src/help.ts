@@ -5,7 +5,7 @@
 // rich enough a human gets every flag and example. Killer flow always
 // appears in the root help, no scrolling required.
 
-export const VERSION = "0.0.9";
+export const VERSION = "0.0.10";
 
 interface CommandHelp {
   synopsis: string;
@@ -133,6 +133,44 @@ Brain slug: sessions/<flat-project>/<date>-<short-id> (gbrain caps at 2 slashes)
     ],
   },
 
+  store: {
+    synopsis: "Unified artifact registry across skills · mcps · hooks · plugins · extensions",
+    usage: [
+      "lescout store list   [--type skill|mcp|hook|plugin|extension] [--agent <name>] [--grep STR]",
+      "lescout store info  <id>",
+      "lescout store search <query> [--type T] [--agent A] [--limit N]",
+      "lescout store roots",
+    ],
+    description: `LeStore is LeScout's meta-CLI for everything that extends an agent:
+skills (SKILL.md), MCP servers, hooks, plugins, extensions.
+
+This release is the READ MVP. It walks every discovery root we know about
+(per the published agent-path map), normalises each artifact into a common
+shape, and lets you list / inspect / search across all five types at once.
+
+Install / remove / sync land in Phase 2 once the manifest schema is signed
+off. See Plans/LESTORE.md for the architecture + phased plan.
+
+For skills specifically you also still have \`lescout skills\` — a thinner
+surface that knows only about SKILL.md and is the right tool for the
+progressive-disclosure / load-on-demand pattern.`,
+    flags: [
+      { flag: "--type T", desc: "Restrict to one type: skill|mcp|hook|plugin|extension" },
+      { flag: "--agent A", desc: "Restrict to one scope: claude|pi|codex|cursor|gemini|bob|shared" },
+      { flag: "--grep STR", desc: "Substring match against id or description" },
+      { flag: "--limit N", desc: "Cap search results (default 8)" },
+    ],
+    examples: [
+      { cmd: "lescout store list", what: "everything across every agent" },
+      { cmd: "lescout store list --type mcp", what: "only MCP servers" },
+      { cmd: "lescout store list --agent claude", what: "only Claude-scoped artifacts" },
+      { cmd: "lescout store search 'fix a broken build'", what: "ranked across all types" },
+      { cmd: "lescout store info gbrain", what: "manifest details for one artifact" },
+      { cmd: "lescout store roots", what: "every directory we scan, and whether it exists" },
+    ],
+    seeAlso: ["lescout help skills", "Plans/LESTORE.md"],
+  },
+
   skills: {
     synopsis: "Progressive disclosure for agent skills (front matter → body on demand)",
     usage: [
@@ -190,7 +228,7 @@ other agents on this or other machines can query it without scanning disk.`,
   },
 };
 
-const COMMAND_ORDER = ["context", "skills", "repo", "docs", "session", "help"];
+const COMMAND_ORDER = ["context", "skills", "store", "repo", "docs", "session", "help"];
 
 // ────────────────────────────── renderers ──────────────────────────────────
 
@@ -232,6 +270,11 @@ function renderRoot(): string {
   lines.push("  $ lescout skills list                           # all skills, ~100t each");
   lines.push("  $ lescout skills suggest 'fix a broken build'   # top 5 ranked");
   lines.push("  $ lescout skills load build-verify              # full body on demand");
+  lines.push("");
+  lines.push("  # Unified artifact registry: skills + mcps + hooks + plugins + extensions");
+  lines.push("  $ lescout store list                            # everything across every agent");
+  lines.push("  $ lescout store search 'fix a broken build'     # ranked across all types");
+  lines.push("  $ lescout store info <id>                       # manifest for one artifact");
   lines.push("");
   lines.push("  # Sandbox-scout a repo or docs URL into the brain");
   lines.push("  $ lescout repo  https://github.com/<owner>/<repo>");

@@ -22,6 +22,12 @@ import {
   renderSkillIndex,
   type SkillScope,
 } from "../skills.ts";
+import {
+  listArtifacts,
+  listRoots,
+  searchArtifacts,
+  type ArtifactType,
+} from "../store.ts";
 
 function hasFlag(args: string[], ...names: string[]): boolean {
   return args.some((a) => names.includes(a));
@@ -80,6 +86,9 @@ async function main() {
   // ----- skills (progressive disclosure) -----
   if (cmd === "skills") return runSkills(rest);
 
+  // ----- store (unified artifact registry; read MVP) -----
+  if (cmd === "store") return runStore(rest);
+
   console.error(`unknown command: ${cmd}`);
   console.error(`try: lescout help`);
   return 2;
@@ -113,6 +122,107 @@ async function runScout(rest: string[], kind: "repo" | "docs"): Promise<number> 
     console.error(`✗ failed: ${(err as Error).message.slice(0, 600)}`);
     return 1;
   }
+}
+
+async function runStore(rest: string[]): Promise<number> {
+  const sub = rest[0];
+  const type = getOpt(rest, "--type") as ArtifactType | undefined;
+  const agent = getOpt(rest, "--agent");
+  const grep = getOpt(rest, "--grep");
+
+  if (sub === "list" || sub === undefined) {
+    const items = await listArtifacts({ type, agent: agent ?? undefined, grep: grep ?? undefined });
+    if (items.length === 0) {
+      console.log(dim("(no artifacts found)"));
+      return 0;
+    }
+    const width = termWidth();
+    const typeW = 10;
+    const idW = 28;
+    const scopeW = 10;
+    const descW = Math.max(20, width - (typeW + idW + scopeW));
+    console.log(dim("TYPE".padEnd(typeW) + "ID".padEnd(idW) + "SCOPE".padEnd(scopeW) + "DESCRIPTION"));
+    for (const a of items) {
+      console.log(
+        dim(a.type.padEnd(typeW)) +
+          bold(a.id.slice(0, idW - 1).padEnd(idW)) +
+          dim(a.scope.padEnd(scopeW)) +
+          smartTruncate(a.description, descW),
+      );
+    }
+    console.log("");
+    console.log(
+      dim(
+        `${items.length} artifacts · use —— --type skill|mcp|hook|plugin|extension · --agent <name> · --grep <s> · lescout store info <id>`,
+      ),
+    );
+    return 0;
+  }
+
+  if (sub === "info") {
+    const id = rest[1];
+    if (!id) {
+      console.error("error: lescout store info <id>");
+      return 2;
+    }
+    const items = await listArtifacts();
+    const m = items.find((a) => a.id === id) ?? items.find((a) => a.id.startsWith(id));
+    if (!m) {
+      console.error(`no artifact matches "${id}"`);
+      return 1;
+    }
+    console.log(`${bold(m.id)}  ${dim(`(${m.type}·${m.scope}·${m.version ?? "—"})`)}`);
+    console.log(dim(m.path));
+    console.log("");
+    console.log(m.description);
+    console.log("");
+    if (m.bodyTokensApprox > 0) console.log(dim(`tokens: ~${m.bodyTokensApprox}`));
+    if (Object.keys(m.extras).length > 0) {
+      console.log(dim(`extras:`));
+      for (const [k, v] of Object.entries(m.extras)) {
+        console.log(dim(`  ${k}: ${JSON.stringify(v)}`));
+      }
+    }
+    return 0;
+  }
+
+  if (sub === "search") {
+    const q = rest.slice(1).filter((a) => !a.startsWith("-")).join(" ");
+    if (!q) {
+      console.error("error: lescout store search <query>");
+      return 2;
+    }
+    const limit = getNum(rest, "--limit") ?? 8;
+    const top = await searchArtifacts(q, limit, { type, agent: agent ?? undefined });
+    if (top.length === 0) {
+      console.log(dim(`(no artifact matched "${q}")`));
+      return 0;
+    }
+    for (const a of top) {
+      console.log(`${bold(a.id.padEnd(28))} ${dim(`[${a.type}]`.padEnd(12))} ${dim(`score=${a.score}`)}  ${dim(`(${a.scope})`)}`);
+      console.log(`  ${smartTruncate(a.description, Math.max(40, termWidth() - 4))}`);
+      console.log("");
+    }
+    return 0;
+  }
+
+  if (sub === "roots") {
+    const roots = await listRoots();
+    console.log(dim("TYPE".padEnd(12) + "SCOPE".padEnd(10) + "EXISTS".padEnd(8) + "PATH"));
+    for (const r of roots) {
+      console.log(
+        dim(r.type.padEnd(12)) +
+          dim(r.scope.padEnd(10)) +
+          (r.exists ? dim("  yes  ") : dim("  no   ")) +
+          r.path,
+      );
+    }
+    return 0;
+  }
+
+  console.error(`error: unknown store subcommand: ${sub ?? "(missing)"}`);
+  console.error("try: lescout help store");
+  return 2;
 }
 
 async function runSkills(rest: string[]): Promise<number> {
