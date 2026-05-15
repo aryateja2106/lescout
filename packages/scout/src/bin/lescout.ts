@@ -15,6 +15,13 @@ import { writeToBrain } from "../brain.ts";
 import { renderHelp, VERSION } from "../help.ts";
 import { buildContext } from "../context.ts";
 import { agentColor, bold, dim, gray, smartTruncate, termWidth } from "../format.ts";
+import {
+  listSkills,
+  loadSkill,
+  suggestSkills,
+  renderSkillIndex,
+  type SkillScope,
+} from "../skills.ts";
 
 function hasFlag(args: string[], ...names: string[]): boolean {
   return args.some((a) => names.includes(a));
@@ -70,6 +77,9 @@ async function main() {
   // ----- context (caveman-compress) -----
   if (cmd === "context") return runContext(rest);
 
+  // ----- skills (progressive disclosure) -----
+  if (cmd === "skills") return runSkills(rest);
+
   console.error(`unknown command: ${cmd}`);
   console.error(`try: lescout help`);
   return 2;
@@ -102,6 +112,160 @@ async function runScout(rest: string[], kind: "repo" | "docs"): Promise<number> 
   } catch (err) {
     console.error(`✗ failed: ${(err as Error).message.slice(0, 600)}`);
     return 1;
+  }
+}
+
+async function runSkills(rest: string[]): Promise<number> {
+  const sub = rest[0];
+
+  if (sub === "list" || sub === undefined) {
+    const scopeArg = getOpt(rest, "--scope") as SkillScope | undefined;
+    const grep = getOpt(rest, "--grep");
+    const wantsBrain = rest.includes("--brain");
+    const useTable = rest.includes("--table");
+    const skills = await listSkills({ scope: scopeArg, grep });
+
+    if (skills.length === 0) {
+      console.log(dim("(no skills found)"));
+      return 0;
+    }
+
+    if (wantsBrain) {
+      const md = renderSkillIndex(skills);
+      const date = new Date().toISOString().slice(0, 10);
+      const slug = `skills/index/${date}`;
+      try {
+        await writeToBrain(slug, md);
+        console.log(`✓ wrote ${slug} (${skills.length} skills)`);
+      } catch (err) {
+        console.error(`✗ brain write failed: ${(err as Error).message.slice(0, 200)}`);
+        return 1;
+      }
+      return 0;
+    }
+
+    const width = termWidth();
+    if (useTable || width >= 140) {
+      printSkillTable(skills, width);
+    } else {
+      printSkillCards(skills, width);
+    }
+    return 0;
+  }
+
+  if (sub === "show") {
+    const name = rest[1];
+    if (!name) {
+      console.error("error: lescout skills show <name>");
+      return 2;
+    }
+    const detail = await loadSkill(name).catch((e: Error) => {
+      console.error(`error: ${e.message}`);
+      return null;
+    });
+    if (!detail) {
+      console.error(`no skill matches "${name}"`);
+      return 1;
+    }
+    console.log(`${bold(detail.name)}  ${dim(`(${detail.scope}·${detail.version ?? "unversioned"})`)}`);
+    console.log(`${dim(detail.path)}`);
+    console.log("");
+    console.log(detail.description);
+    console.log("");
+    console.log(
+      dim(
+        `body: ${(detail.bodySize / 1024).toFixed(1)} KB · ~${detail.bodyTokensApprox} tokens · license=${detail.license ?? "—"} · allowed-tools=[${detail.allowedTools.join(", ") || "—"}]`,
+      ),
+    );
+    console.log("");
+    console.log(dim(`Load body with:  lescout skills load ${detail.name}`));
+    return 0;
+  }
+
+  if (sub === "load") {
+    const name = rest[1];
+    if (!name) {
+      console.error("error: lescout skills load <name>");
+      return 2;
+    }
+    const detail = await loadSkill(name).catch((e: Error) => {
+      console.error(`error: ${e.message}`);
+      return null;
+    });
+    if (!detail) {
+      console.error(`no skill matches "${name}"`);
+      return 1;
+    }
+    process.stdout.write(detail.body);
+    process.stdout.write("\n");
+    return 0;
+  }
+
+  if (sub === "suggest") {
+    const task = rest.slice(1).filter((a) => !a.startsWith("-")).join(" ");
+    if (!task) {
+      console.error("error: lescout skills suggest <task description>");
+      return 2;
+    }
+    const limit = getNum(rest, "--limit") ?? 5;
+    const top = await suggestSkills(task, limit);
+    if (top.length === 0) {
+      console.log(dim(`(no skill matched "${task}")`));
+      return 0;
+    }
+    for (const s of top) {
+      console.log(`${bold(s.name.padEnd(28))} ${dim(`score=${s.score}`)}  ${dim(`(${s.scope})`)}`);
+      console.log(`  ${smartTruncate(s.description, Math.max(40, termWidth() - 4))}`);
+      console.log(dim(`  load:  lescout skills load ${s.name}`));
+      console.log("");
+    }
+    return 0;
+  }
+
+  console.error(`error: unknown skills subcommand: ${sub ?? "(missing)"}`);
+  console.error("try: lescout help skills");
+  return 2;
+}
+
+function printSkillCards(skills: Array<Awaited<ReturnType<typeof listSkills>>[number]>, width: number): void {
+  for (const s of skills) {
+    const dot = ({
+      pi: gray,
+      shared: gray,
+      claude: gray,
+      extra: gray,
+    }[s.scope] ?? gray)("○");
+    const sizeCell = dim(`~${s.bodyTokensApprox.toString().padStart(5)}t`);
+    const head = `${dot} ${bold(s.name.padEnd(28))} ${dim(s.scope.padEnd(7))} ${sizeCell}`;
+    console.log(head);
+    if (s.description) {
+      console.log(dim(`  ${smartTruncate(s.description, Math.max(20, width - 4))}`));
+    }
+  }
+  console.log("");
+  console.log(
+    dim(
+      `${skills.length} skills · use ——  lescout skills show <name>  ·  lescout skills load <name>  ·  --scope pi|shared|claude|extra  ·  --grep <s>`,
+    ),
+  );
+}
+
+function printSkillTable(skills: Array<Awaited<ReturnType<typeof listSkills>>[number]>, width: number): void {
+  const nameW = 28;
+  const scopeW = 8;
+  const sizeW = 8;
+  const descW = Math.max(20, width - (nameW + scopeW + sizeW));
+  console.log(
+    dim("NAME".padEnd(nameW) + "SCOPE".padEnd(scopeW) + "TOKENS".padEnd(sizeW) + "DESCRIPTION"),
+  );
+  for (const s of skills) {
+    const tokens = `~${s.bodyTokensApprox}t`;
+    console.log(
+      bold(s.name.padEnd(nameW)) +
+        dim(s.scope.padEnd(scopeW)) +
+        dim(tokens.padEnd(sizeW)) +
+        smartTruncate(s.description, descW),
+    );
   }
 }
 

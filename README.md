@@ -123,6 +123,29 @@ lescout help context          # per-command detail
 lescout context --help        # same
 ```
 
+### Progressive disclosure for skills
+
+Agent skill files (`SKILL.md` with YAML front matter) live in multiple
+directories. Loading every body for every agent burns context. LeScout
+flips this: read front matter first, fetch bodies only when actually needed.
+
+```bash
+lescout skills list                              # ~100 tokens per skill (cheap index)
+lescout skills list --scope pi                   # filter by source: pi|shared|claude|extra
+lescout skills list --grep build                 # substring filter
+lescout skills show build-verify                 # front matter for one
+lescout skills load build-verify                 # full body to stdout (pipe-friendly)
+lescout skills suggest 'fix a broken build'      # ranked by description-token overlap
+lescout skills list --brain                      # write the index to gbrain at
+                                                 # skills/index/<date> so other agents can query
+```
+
+Default scan roots:
+- `~/.pi/agent/skills/`
+- `~/.agents/skills/`
+- `~/.claude/skills/`
+- `$LESCOUT_SKILL_PATH` (colon-separated extra roots)
+
 ---
 
 ## What `lescout repo` actually does
@@ -215,6 +238,8 @@ Phase 1    ✓  Sandbox + `lescout repo` end-to-end
 Phase 1.5  ✓  Multi-agent session discovery + `lescout session`
 Phase 1.6  ✓  Hierarchical `--help` + `lescout docs <github-url>`
 Phase 1.7  ✓  `lescout context` — caveman-compress bundles for fresh agents
+Phase 1.8  ✓  IBM Bob adapter — multi-agent session discovery covers 6 harnesses
+Phase 1.9  ✓  `lescout skills` — progressive disclosure for agent skill files
 Phase 2    ⏳  `lescout grok <url>` + SearXNG + dual md/html storage
 Phase 3    ⏳  MCP adapter + LeMem auto-checkpoint hooks
 Phase 4    ⏳  LeBrain native brain (SQLite + FTS5)

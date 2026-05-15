@@ -5,7 +5,7 @@
 // rich enough a human gets every flag and example. Killer flow always
 // appears in the root help, no scrolling required.
 
-export const VERSION = "0.0.8";
+export const VERSION = "0.0.9";
 
 interface CommandHelp {
   synopsis: string;
@@ -133,6 +133,51 @@ Brain slug: sessions/<flat-project>/<date>-<short-id> (gbrain caps at 2 slashes)
     ],
   },
 
+  skills: {
+    synopsis: "Progressive disclosure for agent skills (front matter → body on demand)",
+    usage: [
+      "lescout skills list [--scope pi|shared|claude|extra] [--grep STR] [--table] [--brain]",
+      "lescout skills show <name>",
+      "lescout skills load <name>",
+      "lescout skills suggest <task description> [--limit N]",
+    ],
+    description: `Skills are markdown files (SKILL.md) with YAML front matter
+living under ~/.pi/agent/skills, ~/.agents/skills, ~/.claude/skills, and any
+extra path in \$LESCOUT_SKILL_PATH (colon-separated).
+
+The progressive-disclosure principle:
+  - listSkills() reads ONLY the front matter (~100 tokens each)
+  - loadSkill() pulls the full body when an agent actually needs it
+
+This is the agent-side analogue of \`lescout context\`: instead of preloading
+100 KB of skills into every fresh chat, an agent scans the cheap index, then
+fetches the one or two skills it needs for the task at hand.
+
+The --brain flag writes the index to gbrain as \`skills/index/<date>\` so
+other agents on this or other machines can query it without scanning disk.`,
+    flags: [
+      { flag: "--scope NAME", desc: "Filter: pi|shared|claude|extra" },
+      { flag: "--grep STR", desc: "Substring match against name or description" },
+      { flag: "--table", desc: "One-line table (default: cards on narrow terms)" },
+      { flag: "--brain", desc: "Write the index to gbrain as skills/index/<date>" },
+      { flag: "--limit N", desc: "Cap suggestions (default 5)" },
+    ],
+    examples: [
+      { cmd: "lescout skills list", what: "full index, cards on narrow terms" },
+      { cmd: "lescout skills list --scope pi", what: "only pi-native skills" },
+      { cmd: "lescout skills show build-verify", what: "front matter for one skill" },
+      { cmd: "lescout skills load build-verify", what: "full body to stdout (pipe-friendly)" },
+      { cmd: "lescout skills suggest 'fix a broken build'", what: "top 5 ranked skills" },
+      { cmd: "lescout skills list --brain", what: "publish cheap index to brain" },
+    ],
+    seeAlso: ["lescout help context", "lescout help session"],
+    exitCodes: [
+      { code: 0, meaning: "ok" },
+      { code: 1, meaning: "no match or load failure" },
+      { code: 2, meaning: "bad args / unknown subcommand" },
+    ],
+  },
+
   help: {
     synopsis: "Show this help, or detailed help for one command",
     usage: ["lescout help", "lescout help <command>", "lescout <command> --help"],
@@ -145,7 +190,7 @@ Brain slug: sessions/<flat-project>/<date>-<short-id> (gbrain caps at 2 slashes)
   },
 };
 
-const COMMAND_ORDER = ["context", "repo", "docs", "session", "help"];
+const COMMAND_ORDER = ["context", "skills", "repo", "docs", "session", "help"];
 
 // ────────────────────────────── renderers ──────────────────────────────────
 
@@ -182,6 +227,11 @@ function renderRoot(): string {
   lines.push("  # Caveman-compress: dense context for a fresh agent");
   lines.push("  $ lescout context <target>                      # → ~/.lescout/context/<target>-<date>.md");
   lines.push("  # In any new chat: 'Read <that file> before answering.'");
+  lines.push("");
+  lines.push("  # Progressive-disclosure skill index (cheap front matter only)");
+  lines.push("  $ lescout skills list                           # all skills, ~100t each");
+  lines.push("  $ lescout skills suggest 'fix a broken build'   # top 5 ranked");
+  lines.push("  $ lescout skills load build-verify              # full body on demand");
   lines.push("");
   lines.push("  # Sandbox-scout a repo or docs URL into the brain");
   lines.push("  $ lescout repo  https://github.com/<owner>/<repo>");

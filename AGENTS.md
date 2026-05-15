@@ -13,6 +13,14 @@ lescout context <target>     ← run this BEFORE touching a new project.
                                 Read that file. It is what you would
                                 otherwise spend 50 turns re-deriving.
 
+lescout skills list          ← progressive disclosure for agent skills.
+                                Scan front matter (~100 tokens each)
+                                instead of loading 75 full skill bodies
+                                into your context window.
+
+lescout skills load <name>   ← fetch ONE skill's body once you're sure
+                                you need it.
+
 lescout help                 ← every command, every flag, every example.
                                 Designed so you can scan it in one read.
 ```
@@ -27,6 +35,25 @@ lescout help                 ← every command, every flag, every example.
 
 If `lescout` is not on PATH, the user can also fetch the bundle from the
 brain via `gbrain get context/<target>/<date>` or `mcp__gbrain__query`.
+
+## Skills (progressive disclosure)
+
+Don't pre-load every skill body. Do this instead:
+
+```bash
+# Phase 1: cheap scan (~100 tokens per skill)
+lescout skills list
+
+# Phase 2: when a task surfaces a need, suggest skills
+lescout skills suggest 'fix a broken TypeScript build'
+
+# Phase 3: load only the one body you need
+lescout skills load build-verify
+```
+
+This is the agent-side analogue of `lescout context`: small index up front,
+full content on demand. It is the primary discipline for keeping fresh chats
+light while still having every skill available.
 
 ## When the user asks you to "scout" a repo or doc URL
 
