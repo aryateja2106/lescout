@@ -5,7 +5,7 @@
 // rich enough a human gets every flag and example. Killer flow always
 // appears in the root help, no scrolling required.
 
-export const VERSION = "0.0.5";
+export const VERSION = "0.0.6";
 
 interface CommandHelp {
   synopsis: string;
@@ -170,10 +170,20 @@ function renderRoot(): string {
     lines.push(`  ${name.padEnd(9)} ${h.synopsis}`);
   }
   lines.push("");
-  lines.push("QUICKSTART  the killer flow");
-  lines.push("  $ lescout context lockshell                            # bundle brain → one file");
-  lines.push("  # In a fresh Claude / Cursor / Codex / Gemini chat:");
-  lines.push("  > Read ~/.lescout/context/lockshell-<date>.md before answering.");
+  lines.push("COMMON FLOWS  copy-paste ready");
+  lines.push("  # See every session across claude / pi / codex / cursor / gemini");
+  lines.push("  $ lescout session list                          # last 20, all agents");
+  lines.push("  $ lescout session list --agent claude           # filter by agent");
+  lines.push("  $ lescout session list --project lescout        # filter by cwd");
+  lines.push("  $ lescout session resume <8-char-id>            # rehydrate into brain");
+  lines.push("");
+  lines.push("  # Caveman-compress: dense context for a fresh agent");
+  lines.push("  $ lescout context <target>                      # → ~/.lescout/context/<target>-<date>.md");
+  lines.push("  # In any new chat: 'Read <that file> before answering.'");
+  lines.push("");
+  lines.push("  # Sandbox-scout a repo or docs URL into the brain");
+  lines.push("  $ lescout repo  https://github.com/<owner>/<repo>");
+  lines.push("  $ lescout docs  https://github.com/<owner>/<repo>");
   lines.push("");
   lines.push("FLAGS");
   lines.push("  -h, --help        Print help and exit");
