@@ -7,7 +7,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 
-const GBRAIN_BIN = process.env.GBRAIN_BIN ?? "/Users/aryateja/.bun/bin/gbrain";
+// Resolve to the user's gbrain binary via $PATH by default; override with GBRAIN_BIN.
+const GBRAIN_BIN = process.env.GBRAIN_BIN ?? "gbrain";
 
 export interface ContextOptions {
   /** Approx token budget for the output. Default 30000. */

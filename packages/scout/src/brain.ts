@@ -6,7 +6,8 @@ import type { ScoutRepoExtraction } from "./extract.ts";
 import { summarizeTree } from "./extract.ts";
 import { parseRepoIdentity, sanitizeLabel } from "./security.ts";
 
-const GBRAIN_BIN = process.env.GBRAIN_BIN ?? "/Users/aryateja/.bun/bin/gbrain";
+// Resolve to the user's gbrain binary via $PATH by default; override with GBRAIN_BIN.
+const GBRAIN_BIN = process.env.GBRAIN_BIN ?? "gbrain";
 
 /** Slug shape we use for scouted repos/docs. */
 export function repoSlug(url: URL, kind: "repo" | "docs" = "repo"): string {

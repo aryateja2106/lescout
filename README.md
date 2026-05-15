@@ -1,18 +1,211 @@
 # LeScout
 
-> Part of the **LeSearch AI** product family. **Less Search, More Agents.**
+> Part of the **LeSearch AI** product family.
+> **Less Search, More Agents.**
 
-LeScout is the **ingestion + context-loader** layer. Sandboxed scouting +
-caveman-compress context bundles, fed into the GBrain MCP so every agent on
-every machine reads from the same brain.
+LeScout is the *ingestion + context-loader* layer. Sandboxed scouting of
+foreign code, plus caveman-compress context bundles, fed into a brain that
+every agent on every machine reads from.
 
-Sibling tools (planned, same brand):
+```
+ ┌───────────────────────────────────────────────────────────────────┐
+ │  Repos · Docs · Sessions  ──▶  LeScout (sandbox)  ──▶  Brain      │
+ │                                                                   │
+ │  Brain  ──▶  LeScout context  ──▶  one dense file  ──▶  Agent     │
+ └───────────────────────────────────────────────────────────────────┘
+```
 
-- **LeBrain** — unified brain layer over GBrain (Phase 4)
-- **LeMem** — per-session 100K context discipline + auto-checkpoint (Phase 3)
-- **LeLoop** — personal software factory: idea → autonomous prototype → Ralph loop (Phase 6)
+**Sibling tools (planned, same brand):**
 
-See `Plans/BRAND.md` for the full product family + Personal Software Factory thesis.
+| Tool | Role | Phase |
+|------|------|-------|
+| **LeScout** *(this repo)* | Ingestion + sandbox + context bundler | 1.7 ✓ |
+| **LeBrain** | Unified brain layer over GBrain → native | 4 |
+| **LeMem** | Per-session 100K context discipline + auto-checkpoint | 3 |
+| **LeLoop** | Personal Software Factory: idea → prototype → Ralph loop | 6 |
+
+See [`Plans/BRAND.md`](Plans/BRAND.md) for the full Personal Software Factory thesis.
+
+---
+
+## Why
+
+Every developer today spends 30–60% of their time **searching**: docs, Stack
+Overflow, X, old chats, their own old code, GitHub. LeSearch flips that:
+**search once, agents act forever.** The brain compounds; ingest is
+deterministic; retrieval is hybrid; agents run the loops.
+
+LeScout is the first primitive of that stack:
+
+1. **Sandbox** — foreign code (cloned repos) never touches your host. Only
+   structured text crosses the container boundary.
+2. **Context-loader** — `lescout context <target>` collapses everything the
+   brain knows about a project into ONE dense file. A fresh agent loads
+   that file and skips the re-derivation cost.
+
+---
+
+## Install
+
+**Prerequisites:** macOS or Linux · [Bun](https://bun.sh) ≥ 1.1 · Docker
+(or Colima) · [GBrain](https://github.com/garrytan/gbrain) on `$PATH`.
+
+```bash
+# Clone
+git clone https://github.com/aryateja2106/lescout.git ~/Projects/lescout
+cd ~/Projects/lescout
+
+# Install deps
+bun install
+
+# Build the sandbox image (one time; 13 MB Alpine)
+docker build -t lescout/sandbox:latest docker/sandbox/
+
+# Add the CLI to your PATH (one of):
+ln -s ~/Projects/lescout/bin/lescout ~/.bun/bin/lescout       # if ~/.bun/bin is on PATH
+ln -s ~/Projects/lescout/bin/lescout /usr/local/bin/lescout   # system-wide
+# …or just: alias lescout="$HOME/Projects/lescout/bin/lescout"
+
+# Verify
+lescout --version            # 0.0.5
+lescout help                 # the man-page
+```
+
+LeScout shells out to `gbrain` from `$PATH`. Override with `GBRAIN_BIN=/abs/path/to/gbrain`.
+
+---
+
+## Quickstart
+
+### The killer flow — give a fresh agent dense project context in one line
+
+```bash
+# 1. Compress everything in the brain about a project into one file:
+lescout context lockshell                     # 30K-token bundle
+
+# 2. Open a fresh chat in any agent (Claude Code, Cursor, Codex, Gemini, pi)
+#    and paste:
+> Read ~/.lescout/context/lockshell-2026-05-15.md before answering anything.
+> What's the next blocking thing on this project?
+```
+
+That's it. The agent now has dense, ranked context: architecture, threat
+model, roadmap, contributing notes, related session summaries — without
+re-deriving anything.
+
+### Sandbox-scout a repository
+
+```bash
+# Read-only Docker, --cap-drop ALL, --no-new-privileges, no postinstall scripts
+lescout repo https://github.com/safishamsi/graphify
+lescout repo https://github.com/rohitg00/agentmemory --dry-run
+```
+
+### Sandbox-scout official docs from a GitHub repo
+
+```bash
+lescout docs https://github.com/colinhacks/zod
+```
+
+### Discover and resume sessions across every agent harness
+
+```bash
+lescout session list --limit 10
+lescout session list --agent codex --project mconnect
+lescout session resume c1a443ce
+```
+
+### Self-discovery for any agent
+
+```bash
+lescout help                  # tight man-page
+lescout help context          # per-command detail
+lescout context --help        # same
+```
+
+---
+
+## What `lescout repo` actually does
+
+```
+1. Validate URL against allowlist (github/gitlab/bitbucket/codeberg/sr.ht).
+2. Run hardened Docker container:
+     --read-only --cap-drop ALL --no-new-privileges
+     --memory 1g --cpus 1 --pids-limit 256
+     --network bridge --user 1000:1000
+3. Inside the container:
+     git clone --depth 1 --no-tags --no-recurse-submodules
+              -c core.hooksPath=/dev/null     ← no foreign hooks
+              -c credential.helper=            ← no host credentials
+     chmod -x every file                      ← defense in depth
+     tree -L 3 -J          → tree.json
+     copy manifests        → manifest.{package.json,Cargo.toml,…}
+     copy READMEs          → doc.{README.md,AGENTS.md,CLAUDE.md,…}
+     ripgrep TODO/FIXME    → todos.jsonl
+4. Parse artifacts → render markdown brain page.
+5. `gbrain put repos/<host>/<owner>/<name>`   ← only TEXT crosses the boundary.
+6. Full audit envelope → ~/.lescout/runs/<run-id>/_run.json
+```
+
+**Foreign code never executes on the host.** No `npm install`, no `pip
+install`, no `cargo build`, no `postinstall`, no `setup.py`.
+
+---
+
+## How `lescout context` works (the caveman-compress)
+
+```
+target = "lockshell"
+
+1. gbrain query <target>            → top-N ranked chunks (hybrid search)
+2. gbrain list --slug-prefix repos/ → name-matched repos
+3.                       docs/      → name-matched docs
+4.                       sessions/  → name-matched session summaries
+5. Dedupe by slug; prefer hits that already carry chunk text.
+6. Enrich thin hits with `gbrain get <slug>` (cap 30 fetches, 5 KB each for
+   high-scoring hits, 2.5 KB for the rest).
+7. Bucket by source type: docs > repos > sessions > notes > concepts > other.
+8. Render markdown under a token budget (default 30 K; ~4 chars/token).
+9. Write to:
+     ~/.lescout/context/<target>-<date>.md
+   And to the brain at:
+     context/<target>/<date>
+```
+
+Re-run `lescout context <target>` any time the brain changes — bundles are
+idempotent per-day and rewrite-safe.
+
+---
+
+## Architecture
+
+```
+~/Projects/lescout/
+├── bin/lescout                       POSIX wrapper → bun run packages/scout
+├── docker/sandbox/                   Hardened Alpine 3.20 image
+│   ├── Dockerfile
+│   └── scripts/scout-repo.sh
+├── packages/scout/                   Bun + TypeScript core
+│   ├── src/
+│   │   ├── bin/lescout.ts            CLI entry + dispatch
+│   │   ├── help.ts                   Help catalog
+│   │   ├── security.ts               URL validation, allowlist
+│   │   ├── sandbox.ts                Docker run wrapper
+│   │   ├── extract.ts                Parse sandbox artifacts
+│   │   ├── repo.ts                   Repo orchestrator
+│   │   ├── session.ts                Multi-agent session discovery
+│   │   ├── context.ts                Caveman-compress builder
+│   │   └── brain.ts                  GBrain shell-out + markdown render
+│   └── test/security.test.ts         15 passing
+├── Plans/                            PRD · BRAND · CONTEXT-DISCIPLINE
+└── research/                         Synthesis of rowboat / graphify / gbrain
+
+~/.lescout/                           Per-host runtime data (gitignored)
+├── runs/<run-id>/                    Per-scout audit envelope
+└── context/<target>-<date>.md        Caveman-compress output files
+```
+
+---
 
 ## Status
 
@@ -29,101 +222,38 @@ Phase 5    ⏳  Pi-5 deployment + Tailscale remote MCP
 Phase 6    ⏳  LeLoop Personal Software Factory
 ```
 
-## Quickstart
-
-```bash
-# 1. Build the sandbox image (one time)
-docker build -t lescout/sandbox:latest docker/sandbox/
-
-# 2. Install deps
-bun install
-
-# 3. Ingest
-lescout repo https://github.com/safishamsi/graphify   # scout a repo into brain
-lescout docs https://github.com/colinhacks/zod        # scout as docs (different slug + tag)
-
-# 4. Session discovery (across every agent harness)
-lescout session list --limit 10                       # claude/pi/codex/cursor/gemini
-lescout session list --agent codex --project mconnect
-lescout session resume <chat-id>                      # pick up where you left off
-
-# 5. THE KILLER FLOW — caveman-compress one project's brain into one file:
-lescout context lockshell                             # 30K-token bundle written to disk + brain
-# In any fresh agent (Claude / Cursor / Codex / Gemini):
-#   "Read ~/.lescout/context/lockshell-<date>.md before answering anything."
-# → agent loads dense context once, then acts. No re-deriving, no bloat.
-
-# 5. Self-discoverable: agents call --help to learn the surface
-lescout help                                          # full reference
-lescout repo --help                                   # man-style per-command
-lescout session list --help                           # per-subcommand
-
-# 6. Query the brain (via gbrain CLI, MCP, or any agent)
-gbrain query "what does graphify do"
-```
-
-## What `lescout repo` actually does
-
-```
-1. Validate URL against allowlist (github/gitlab/bitbucket/codeberg/sr.ht)
-2. Run hardened Docker container:
-     --read-only --cap-drop ALL --no-new-privileges
-     --memory 1g --cpus 1 --pids-limit 256
-     --network bridge --user 1000:1000
-3. Inside container:
-     git clone --depth 1 --no-tags --no-recurse-submodules
-              -c core.hooksPath=/dev/null      ← no foreign hooks
-              -c credential.helper=             ← no host creds
-     chmod -x every file                       ← defense in depth
-     tree -L 3 -J          → tree.json
-     copy manifests        → manifest.{package.json,Cargo.toml,...}
-     copy READMEs          → doc.{README.md,AGENTS.md,CLAUDE.md,...}
-     ripgrep TODO/FIXME    → todos.jsonl
-4. Parse artifacts → render markdown brain page
-5. `gbrain put repos/<host>/<owner>/<name>` ← only TEXT crosses the boundary
-6. Full audit envelope → ~/.lescout/runs/<run-id>/_run.json
-```
-
-**Foreign code never executes on the host.** No `npm install`, no `pip install`, no `cargo build`, no postinstall, no setup.py.
-
-## Architecture
-
-```
-~/Projects/lescout/
-├── bin/lescout                       Convenience wrapper (POSIX shell)
-├── docker/sandbox/                   Hardened Alpine image
-│   ├── Dockerfile
-│   └── scripts/scout-repo.sh
-├── packages/scout/                   Bun + TypeScript core
-│   ├── src/
-│   │   ├── security.ts               URL validation, allowlist
-│   │   ├── sandbox.ts                Docker run wrapper
-│   │   ├── extract.ts                Parse sandbox artifacts
-│   │   ├── brain.ts                  GBrain CLI shell-out + markdown render
-│   │   ├── repo.ts                   Orchestrator
-│   │   └── bin/lescout.ts            CLI entry
-│   └── test/security.test.ts         15 passing
-├── Plans/PRD-v1.md                   Full product vision + 10-phase plan
-└── research/SYNTHESIS.md             What we steal from rowboat/graphify/gbrain
-
-~/.lescout/runs/<run-id>/             Per-run audit envelope
-├── _run.json                         Command, env, exit code, duration
-├── tree.json                         Filetree (depth 3, JSON)
-├── manifest.*                        package.json, Cargo.toml, etc.
-├── doc.*                             READMEs, AGENTS.md, CLAUDE.md, etc.
-├── todos.jsonl                       Ripgrep matches
-├── sha.txt, meta.txt, lastcommit.txt
-└── page.md                           Rendered brain page (also in gbrain)
-```
+---
 
 ## Inspiration
 
-- **GBrain** (Garry Tan, MIT) — the brain pattern. We use it as interim brain in Phases 0-4; LeScout's own brain lands in Phase 4.
-- **Rowboat** (Apache-2.0) — vault structure, `Today.md` aggregator, continuous sync.
-- **Graphify** (MIT) — pipeline architecture (`detect → extract → build → analyze → report`), URL allowlist patterns.
+LeScout doesn't fork these — it copies *patterns*, not codebases:
 
-See [research/SYNTHESIS.md](research/SYNTHESIS.md) for the full borrow/avoid breakdown.
+- **[GBrain](https://github.com/garrytan/gbrain)** (Garry Tan, MIT) — the brain pattern. Used as interim brain Phases 0–4; LeBrain lands in Phase 4.
+- **[Rowboat](https://github.com/rowboatlabs/rowboat)** (Apache-2.0) — vault structure, `Today.md` aggregator, continuous sync.
+- **[Graphify](https://github.com/safishamsi/graphify)** (MIT) — pipeline architecture (`detect → extract → build → analyze → report`), URL allowlist patterns.
+- **[AgentMemory](https://github.com/rohitg00/agentmemory)** — 51-tool MCP surface area to study for the LeMem auto-checkpoint hooks.
+
+See [`research/SYNTHESIS.md`](research/SYNTHESIS.md) for the full borrow/avoid breakdown.
+
+---
+
+## Security stance
+
+LeScout was built because mainstream "agent runs your prompts" tools too
+often `npm install` or `pip install` their findings straight into your
+host. LeScout's hard rule:
+
+> **Foreign code never executes on the host. Period.**
+>
+> Cloned repos live in a read-only, no-cap, no-net-internal sandbox container.
+> Only parsed text (tree, README, manifest manifest, todos) ever crosses
+> the boundary into the host filesystem. `npm install` and friends never run.
+
+If you spot a path where a foreign script can reach the host, open an issue
+tagged `security`.
+
+---
 
 ## License
 
-MIT.
+[MIT](LICENSE) · © 2026 Arya Teja / LeSearch AI

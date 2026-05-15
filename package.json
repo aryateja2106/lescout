@@ -1,10 +1,36 @@
 {
   "name": "lescout",
-  "version": "0.0.1",
+  "version": "0.0.5",
   "private": true,
-  "description": "Less Scout, More Context — sandboxed scouting + always-on knowledge brain across all your agents",
   "type": "module",
-  "workspaces": ["packages/*"],
+  "description": "LeScout — sandboxed scouting + caveman-compress context for every agent. Part of LeSearch AI.",
+  "author": "Arya Teja <aryayt55@gmail.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/aryateja2106/lescout",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aryateja2106/lescout.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aryateja2106/lescout/issues"
+  },
+  "keywords": [
+    "agent",
+    "context",
+    "sandbox",
+    "docker",
+    "brain",
+    "gbrain",
+    "mcp",
+    "claude",
+    "cursor",
+    "codex",
+    "gemini",
+    "lesearch"
+  ],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "build": "bun run --filter '*' build",
     "typecheck": "tsc -b",

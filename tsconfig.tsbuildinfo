@@ -1,1 +1,0 @@
-{"root":["./packages/scout/src/brain.ts","./packages/scout/src/context.ts","./packages/scout/src/extract.ts","./packages/scout/src/help.ts","./packages/scout/src/index.ts","./packages/scout/src/repo.ts","./packages/scout/src/sandbox.ts","./packages/scout/src/security.ts","./packages/scout/src/session.ts","./packages/scout/src/bin/lescout.ts"],"version":"5.9.3"}

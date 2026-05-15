@@ -1,82 +1,61 @@
 // help.ts — structured help texts. Agents call `lescout help` or
 // `lescout <cmd> --help` to self-discover capabilities.
+//
+// Format philosophy: tight enough an agent can scan it in 200 tokens,
+// rich enough a human gets every flag and example. Killer flow always
+// appears in the root help, no scrolling required.
 
-export const VERSION = "0.0.4";
+export const VERSION = "0.0.5";
 
 interface CommandHelp {
   synopsis: string;
   usage: string[];
   description: string;
   flags?: Array<{ flag: string; desc: string }>;
-  examples?: Array<{ cmd: string; what: string }>;
+  examples?: Array<{ cmd: string; what?: string }>;
   seeAlso?: string[];
   exitCodes?: Array<{ code: number; meaning: string }>;
 }
 
+// ───────────────────────────── command catalog ─────────────────────────────
+
 const COMMANDS: Record<string, CommandHelp> = {
   context: {
-    synopsis: "Caveman-compress: gather everything about a target into one dense file",
+    synopsis: "Bundle brain knowledge about a target into one dense file",
     usage: ["lescout context <target> [--tokens N] [--no-brain]"],
-    description: `Hybrid-search across your GBrain for a target (project name, repo, topic)
-and assemble the most relevant pages, repos, sessions, and concepts into ONE
-compact markdown bundle under a token budget.
+    description: `Hybrid-search the brain for <target>, dedup hits across pages /
+repos / sessions / notes, fetch full bodies for top scorers, render into ONE
+markdown file under a token budget.
 
-Use case: fresh agent (Claude / Cursor / Codex / Gemini) starts on project X.
-Instead of re-explaining, run \`lescout context X\` and load the resulting file
-as the first message. Dense context, no bloat.
+Output: ~/.lescout/context/<target>-<date>.md
+Brain : context/<target>/<date>   (skip with --no-brain)
 
-Written to:
-  ~/.lescout/context/<target>-<date>.md
-And by default to the brain at:
-  context/<target>/<date>
-so every other agent can fetch via gbrain query or mcp__gbrain__query.`,
+The killer flow: a fresh agent on a new chat reads ONE file instead of
+re-deriving context. Run before every cold start.`,
     flags: [
-      { flag: "--tokens N", desc: "Token budget (default 30000)" },
-      { flag: "--no-brain", desc: "Skip writing the bundle back to the brain" },
+      { flag: "--tokens N", desc: "Token budget (default 30000, ~4 chars/token)" },
+      { flag: "--no-brain", desc: "Write the file but skip the brain write-back" },
     ],
     examples: [
-      { cmd: "lescout context lockshell", what: "30K-token bundle on lockshell" },
-      { cmd: "lescout context lesearch --tokens 50000", what: "Bigger budget for bigger project" },
-      { cmd: "lescout context agentmemory --no-brain", what: "Local file only, skip brain write" },
+      { cmd: "lescout context lockshell" },
+      { cmd: "lescout context lesearch --tokens 50000" },
+      { cmd: "lescout context agentmemory --no-brain" },
     ],
-    seeAlso: ["lescout help repo", "lescout help session"],
-  },
-
-  __root__: {
-    synopsis: "Less Scout, More Context — sandboxed scouting + brain-backed retrieval for every agent",
-    usage: [
-      "lescout <command> [args]",
-      "lescout help [command]",
-      "lescout <command> --help",
-      "lescout --version",
-    ],
-    description: `LeScout is a personal knowledge stack that follows you across machines and feeds every agent harness (pi, Claude Code, Cursor, Codex, Gemini, Amp).
-
-It has two halves:
-  1. SCOUT  — sandboxed ingestion: repos, URLs, docs, sessions. Foreign code
-              never executes on the host. Only structured text crosses the
-              container boundary.
-  2. BRAIN  — hybrid-search retrieval (currently via GBrain MCP). Queryable
-              by any agent. Sessions resume from chat-id.`,
-    flags: [
-      { flag: "-h, --help", desc: "Print this help and exit" },
-      { flag: "-v, --version", desc: "Print version and exit" },
-    ],
-    seeAlso: ["lescout help repo", "lescout help session", "lescout help docs"],
+    seeAlso: ["lescout help repo", "lescout help session", "gbrain query <topic>"],
   },
 
   repo: {
-    synopsis: "Sandboxed ingestion of a git repository into the brain",
+    synopsis: "Sandbox-scout a git repository into the brain",
     usage: ["lescout repo <git-url> [--dry-run] [--timeout SEC]"],
-    description: `Clones a git repository inside a hardened Docker sandbox
-(--read-only, --cap-drop ALL, --no-new-privileges, --memory 1g, network=bridge,
-user=1000:1000). Inside the container: git clone --depth 1 --no-tags
---no-recurse-submodules with hooksPath disabled, then extracts tree, manifests,
-READMEs, AGENTS.md, CLAUDE.md, todos. NO npm/pip/cargo install ever runs.
+    description: `Clones a repository inside a hardened Docker sandbox:
+--read-only · --cap-drop ALL · --no-new-privileges · --memory 1g · user=1000.
 
-The extracted text is rendered as a markdown brain page (slug:
-repos/<host>/<owner>/<name>) and written via gbrain put. A full audit envelope
-lives at ~/.lescout/runs/<run-id>/.
+Inside the container: shallow clone (--depth 1, hooksPath disabled), then
+extract tree, manifests, READMEs, AGENTS.md, CLAUDE.md, todos. No npm/pip/
+cargo install ever runs. Only structured text crosses the boundary.
+
+Brain slug: repos/<host>/<owner>/<name>
+Audit dir : ~/.lescout/runs/<run-id>/
 
 Allowed hosts: github.com, gitlab.com, bitbucket.org, codeberg.org, git.sr.ht.`,
     flags: [
@@ -84,71 +63,67 @@ Allowed hosts: github.com, gitlab.com, bitbucket.org, codeberg.org, git.sr.ht.`,
       { flag: "--timeout SEC", desc: "Container timeout in seconds (default 120)" },
     ],
     examples: [
-      { cmd: "lescout repo https://github.com/safishamsi/graphify", what: "Standard scout + write to brain" },
-      { cmd: "lescout repo https://github.com/rohitg00/agentmemory --dry-run", what: "Inspect artifacts only" },
+      { cmd: "lescout repo https://github.com/safishamsi/graphify" },
+      { cmd: "lescout repo https://github.com/rohitg00/agentmemory --dry-run" },
     ],
-    seeAlso: ["lescout help docs", "gbrain query <topic>"],
+    seeAlso: ["lescout help docs"],
     exitCodes: [
       { code: 0, meaning: "Repository scouted and written to brain" },
-      { code: 1, meaning: "Sandbox or brain write failed (stderr has detail)" },
+      { code: 1, meaning: "Sandbox or brain write failed" },
       { code: 2, meaning: "Missing or invalid <git-url> argument" },
     ],
   },
 
   docs: {
-    synopsis: "Ingest official documentation from a GitHub repo or doc site",
-    usage: ["lescout docs <github-url-or-doc-site> [--dry-run]"],
+    synopsis: "Sandbox-scout official docs from a GitHub repo (URL doc sites: Phase 2)",
+    usage: ["lescout docs <github-url> [--dry-run]"],
     description: `Like \`lescout repo\` but optimized for documentation hierarchies.
 
-Today: GitHub URLs are supported. The sandbox clones the repo and pulls
-README.md / AGENTS.md / CLAUDE.md / ARCHITECTURE.md / CONTRIBUTING.md /
-docs/*.md / manifests, then tags the brain page as type=docs.
+Pulls README.md · AGENTS.md · CLAUDE.md · ARCHITECTURE.md · CONTRIBUTING.md ·
+docs/**/*.md and manifests. Brain page tagged type=docs, slug docs/<host>/
+<owner>/<name>.
 
-Coming in Phase 2: non-GitHub URLs (official doc sites) via \`lescout grok\`
-with sitemap.xml parsing, similar in spirit to Context7's curated doc index.`,
-    flags: [
-      { flag: "--dry-run", desc: "Extract but skip brain write" },
-    ],
+Non-GitHub URLs (official doc sites with sitemap.xml) land in Phase 2 via
+\`lescout grok\`.`,
+    flags: [{ flag: "--dry-run", desc: "Extract but skip brain write" }],
     examples: [
-      { cmd: "lescout docs https://github.com/colinhacks/zod", what: "Ingest zod README + docs" },
-      { cmd: "lescout docs https://github.com/tc39/proposal-pipeline-operator", what: "Ingest a spec repo" },
+      { cmd: "lescout docs https://github.com/colinhacks/zod" },
+      { cmd: "lescout docs https://github.com/tc39/proposal-pipeline-operator" },
     ],
     seeAlso: ["lescout help repo"],
     exitCodes: [
       { code: 0, meaning: "Docs scouted and written to brain" },
-      { code: 1, meaning: "Fetch/extract failed" },
+      { code: 1, meaning: "Fetch / extract failed" },
       { code: 2, meaning: "Unsupported URL (non-GitHub) — wait for Phase 2 grok" },
     ],
   },
 
   session: {
-    synopsis: "Discover and resume coding-agent sessions across harnesses",
+    synopsis: "List / show / resume coding-agent sessions across all harnesses",
     usage: [
       "lescout session list [--limit N] [--project SUBSTR] [--agent NAME]",
       "lescout session show <chat-id>",
       "lescout session resume <chat-id>",
     ],
-    description: `Walks the on-disk session stores for every agent harness
-LeScout knows about (Claude Code, pi, Codex, Cursor, Gemini) and produces a
-unified view.
+    description: `Walks every on-disk session store LeScout knows about and shows
+a unified view across Claude Code · pi · Codex · Cursor · Gemini.
 
-  list   - newest-first table of recent sessions, with AGENT column
-  show   - print a brain-ready summary of one session to stdout
-  resume - write that summary into the brain so any agent can pick up
+  list   – newest-first table, columns: SHORT · AGENT · DATE · LINES · PROJECT · TITLE
+  show   – print a brain-ready summary of one session to stdout
+  resume – write that summary into the brain so any agent can pick up
 
-Slugs land at sessions/<flat-project>/<date>-<short-id>. Two slashes only —
-gbrain rejects deeper.`,
+Brain slug: sessions/<flat-project>/<date>-<short-id> (gbrain caps at 2 slashes).`,
     flags: [
       { flag: "--limit N", desc: "Cap results (default 20)" },
       { flag: "--project SUBSTR", desc: "Filter by cwd substring (case-insensitive)" },
-      { flag: "--agent NAME", desc: "Filter by agent: claude|pi|codex|cursor|gemini" },
+      { flag: "--agent NAME", desc: "Filter: claude|pi|codex|cursor|gemini" },
     ],
     examples: [
-      { cmd: "lescout session list --limit 10", what: "Last 10 sessions across all agents" },
-      { cmd: "lescout session list --project lescout --agent claude", what: "Claude sessions in lescout/" },
-      { cmd: "lescout session resume c1a443ce", what: "Resume by 8-char prefix" },
+      { cmd: "lescout session list --limit 10" },
+      { cmd: "lescout session list --project lescout --agent claude" },
+      { cmd: "lescout session resume c1a443ce" },
     ],
-    seeAlso: ["lescout help repo"],
+    seeAlso: ["lescout help context"],
     exitCodes: [
       { code: 0, meaning: "ok" },
       { code: 1, meaning: "no match or write failed" },
@@ -157,86 +132,96 @@ gbrain rejects deeper.`,
   },
 
   help: {
-    synopsis: "Print structured help for any command",
-    usage: ["lescout help", "lescout help <command>"],
-    description: "Prints man-style help suitable for both humans and agents that grep through --help output.",
+    synopsis: "Show this help, or detailed help for one command",
+    usage: ["lescout help", "lescout help <command>", "lescout <command> --help"],
+    description: "Man-style help. Designed so an agent grepping --help gets enough to act.",
     examples: [
-      { cmd: "lescout help", what: "Full reference" },
-      { cmd: "lescout help repo", what: "Just the repo subcommand" },
+      { cmd: "lescout help" },
+      { cmd: "lescout help context" },
+      { cmd: "lescout context --help" },
     ],
   },
 };
 
+const COMMAND_ORDER = ["context", "repo", "docs", "session", "help"];
+
+// ────────────────────────────── renderers ──────────────────────────────────
+
 export function renderHelp(cmd?: string): string {
-  const sections: string[] = [];
-  if (!cmd || cmd === "__root__") {
-    const root = COMMANDS.__root__!;
-    sections.push(`lescout ${VERSION} — ${root.synopsis}`);
-    sections.push("");
-    sections.push("USAGE");
-    root.usage.forEach((u) => sections.push(`  ${u}`));
-    sections.push("");
-    sections.push("DESCRIPTION");
-    root.description.split("\n").forEach((l) => sections.push(`  ${l}`));
-    sections.push("");
-    sections.push("COMMANDS");
-    Object.entries(COMMANDS).forEach(([name, h]) => {
-      if (name === "__root__") return;
-      sections.push(`  ${name.padEnd(10)} ${h.synopsis}`);
-    });
-    sections.push("");
-    if (root.flags) {
-      sections.push("FLAGS");
-      root.flags.forEach((f) => sections.push(`  ${f.flag.padEnd(18)} ${f.desc}`));
-      sections.push("");
-    }
-    sections.push("EXAMPLES");
-    sections.push("  lescout repo https://github.com/safishamsi/graphify");
-    sections.push("  lescout session list --limit 10");
-    sections.push("  lescout session resume c1a443ce");
-    sections.push("  lescout docs https://github.com/colinhacks/zod");
-    sections.push("");
-    sections.push("SEE ALSO");
-    sections.push("  lescout help <command>   — detailed help for one command");
-    sections.push("  ~/Projects/lescout/Plans/PRD-v1.md");
-    sections.push("  ~/Projects/lescout/Plans/CONTEXT-DISCIPLINE.md");
-    return sections.join("\n");
-  }
-
+  if (!cmd || cmd === "__root__") return renderRoot();
   const h = COMMANDS[cmd];
-  if (!h) {
-    return `no help for "${cmd}". try: lescout help`;
+  if (!h) return `lescout: no help for "${cmd}". Try: lescout help`;
+  return renderCommand(cmd, h);
+}
+
+function renderRoot(): string {
+  const lines: string[] = [];
+  lines.push(`lescout ${VERSION} — sandboxed scouting + caveman-compress for every agent`);
+  lines.push(`Part of LeSearch AI · Less Search, More Agents`);
+  lines.push("");
+  lines.push("USAGE");
+  lines.push("  lescout <command> [args]        lescout <command> --help");
+  lines.push("  lescout help [command]          lescout --version");
+  lines.push("");
+  lines.push("COMMANDS");
+  for (const name of COMMAND_ORDER) {
+    const h = COMMANDS[name];
+    if (!h) continue;
+    lines.push(`  ${name.padEnd(9)} ${h.synopsis}`);
+  }
+  lines.push("");
+  lines.push("QUICKSTART  the killer flow");
+  lines.push("  $ lescout context lockshell                            # bundle brain → one file");
+  lines.push("  # In a fresh Claude / Cursor / Codex / Gemini chat:");
+  lines.push("  > Read ~/.lescout/context/lockshell-<date>.md before answering.");
+  lines.push("");
+  lines.push("FLAGS");
+  lines.push("  -h, --help        Print help and exit");
+  lines.push("  -v, --version     Print version and exit");
+  lines.push("");
+  lines.push("MORE  lescout help <command>");
+  lines.push("      https://github.com/aryateja2106/lescout");
+  return lines.join("\n");
+}
+
+function renderCommand(name: string, h: CommandHelp): string {
+  const lines: string[] = [];
+  lines.push(`lescout ${name} — ${h.synopsis}`);
+  lines.push("");
+
+  lines.push("USAGE");
+  for (const u of h.usage) lines.push(`  ${u}`);
+  lines.push("");
+
+  lines.push("DESCRIPTION");
+  for (const l of h.description.split("\n")) lines.push(`  ${l}`);
+  lines.push("");
+
+  if (h.flags?.length) {
+    lines.push("FLAGS");
+    const pad = Math.max(...h.flags.map((f) => f.flag.length)) + 2;
+    for (const f of h.flags) lines.push(`  ${f.flag.padEnd(pad)} ${f.desc}`);
+    lines.push("");
   }
 
-  sections.push(`lescout ${cmd} — ${h.synopsis}`);
-  sections.push("");
-  sections.push("USAGE");
-  h.usage.forEach((u) => sections.push(`  ${u}`));
-  sections.push("");
-  sections.push("DESCRIPTION");
-  h.description.split("\n").forEach((l) => sections.push(`  ${l}`));
-  sections.push("");
-  if (h.flags?.length) {
-    sections.push("FLAGS");
-    h.flags.forEach((f) => sections.push(`  ${f.flag.padEnd(22)} ${f.desc}`));
-    sections.push("");
-  }
   if (h.examples?.length) {
-    sections.push("EXAMPLES");
-    h.examples.forEach((e) => {
-      sections.push(`  $ ${e.cmd}`);
-      sections.push(`    ${e.what}`);
-    });
-    sections.push("");
+    lines.push("EXAMPLES");
+    for (const e of h.examples) {
+      lines.push(`  $ ${e.cmd}`);
+      if (e.what) lines.push(`    ${e.what}`);
+    }
+    lines.push("");
   }
+
   if (h.exitCodes?.length) {
-    sections.push("EXIT CODES");
-    h.exitCodes.forEach((c) => sections.push(`  ${String(c.code).padEnd(3)} ${c.meaning}`));
-    sections.push("");
+    lines.push("EXIT CODES");
+    for (const c of h.exitCodes) lines.push(`  ${String(c.code).padEnd(3)} ${c.meaning}`);
+    lines.push("");
   }
+
   if (h.seeAlso?.length) {
-    sections.push("SEE ALSO");
-    h.seeAlso.forEach((s) => sections.push(`  ${s}`));
+    lines.push("SEE ALSO  " + h.seeAlso.join(" · "));
   }
-  return sections.join("\n");
+
+  return lines.join("\n").trimEnd();
 }

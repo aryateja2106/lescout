@@ -1,8 +1,53 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 dist/
-.env
-.env.local
-*.log
-.DS_Store
-.claude-cache/
+build/
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Bun
 bun.lockb
+
+# Env / secrets — NEVER commit
+.env
+.env.*
+*.secret
+*.secrets
+*.key
+*.pem
+.config/secrets.env
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Editors
+.vscode/
+.idea/
+*.code-workspace
+
+# Logs
+*.log
+logs/
+
+# Caches
+.claude-cache/
+.cache/
+.bun/
+
+# Agent / orchestration scaffolding (machine-local)
+.omc/
+.claude/
+.cursor/
+.codex/
+
+# LeScout runtime data (never tracked — lives in ~/.lescout/ on each host)
+.lescout/
+
+# OS-specific test artifacts
+coverage/
+*.lcov
