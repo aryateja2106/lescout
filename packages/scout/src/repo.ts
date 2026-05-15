@@ -12,6 +12,8 @@ export interface ScoutRepoOptions {
   image?: string;
   /** Container timeout, seconds. */
   timeoutSec?: number;
+  /** Slug prefix + frontmatter type: "repo" (default) or "docs". */
+  kind?: "repo" | "docs";
 }
 
 export interface ScoutRepoReport {
@@ -25,9 +27,10 @@ export interface ScoutRepoReport {
 }
 
 export async function scoutRepo(rawUrl: string, opts: ScoutRepoOptions = {}): Promise<ScoutRepoReport> {
+  const kind = opts.kind ?? "repo";
   // 1. Validate the URL before docker even sees it.
   const url = validateRepoUrl(rawUrl);
-  const slug = repoSlug(url);
+  const slug = repoSlug(url, kind);
 
   // 2. Run the sandboxed clone + inspection.
   const result = await runSandbox({
@@ -44,7 +47,7 @@ export async function scoutRepo(rawUrl: string, opts: ScoutRepoOptions = {}): Pr
   const extraction = await extractFromSandbox(result.outDir, url.toString());
 
   // 4. Render the brain page.
-  const markdown = renderRepoPage(extraction);
+  const markdown = renderRepoPage(extraction, kind);
   await Bun.write(`${result.outDir}/page.md`, markdown);
 
   // 5. Hand to brain (unless dry-run).

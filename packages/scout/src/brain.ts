@@ -8,24 +8,25 @@ import { parseRepoIdentity, sanitizeLabel } from "./security.ts";
 
 const GBRAIN_BIN = process.env.GBRAIN_BIN ?? "/Users/aryateja/.bun/bin/gbrain";
 
-/** Slug shape we use for scouted repos. */
-export function repoSlug(url: URL): string {
+/** Slug shape we use for scouted repos/docs. */
+export function repoSlug(url: URL, kind: "repo" | "docs" = "repo"): string {
   const { owner, name, host } = parseRepoIdentity(url);
   // host kept short to fit alongside owner/name
   const shortHost = host.replace(/\.com$|\.org$/, "");
-  return `repos/${shortHost}/${owner}/${name}`;
+  const prefix = kind === "docs" ? "docs" : "repos";
+  return `${prefix}/${shortHost}/${owner}/${name}`;
 }
 
 /** Render a scout result as a markdown brain page. */
-export function renderRepoPage(extraction: ScoutRepoExtraction): string {
+export function renderRepoPage(extraction: ScoutRepoExtraction, kind: "repo" | "docs" = "repo"): string {
   const url = new URL(extraction.url);
   const { owner, name } = parseRepoIdentity(url);
-  const slug = repoSlug(url);
+  const slug = repoSlug(url, kind);
 
   const frontmatter = [
     "---",
-    `title: ${owner}/${name}`,
-    `type: repo`,
+    `title: ${owner}/${name}${kind === "docs" ? " (docs)" : ""}`,
+    `type: ${kind}`,
     `source_url: ${extraction.url}`,
     `host: ${url.hostname}`,
     `owner: ${owner}`,
@@ -35,7 +36,7 @@ export function renderRepoPage(extraction: ScoutRepoExtraction): string {
     `file_count: ${extraction.fileCount}`,
     `dir_count: ${extraction.dirCount}`,
     `size_bytes: ${extraction.sizeBytes}`,
-    `tags: [scouted, repo]`,
+    `tags: [scouted, ${kind}]`,
     "---",
     "",
   ].join("\n");

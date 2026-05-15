@@ -7,12 +7,14 @@ A two-half personal knowledge stack — **sandboxed scouting** + **always-on hyb
 ## Status
 
 ```
-Phase 0  ✓  GBrain wired as interim brain (Claude Code + pi MCP)
-Phase 1  ✓  Sandbox + `lescout repo` end-to-end
-Phase 2  ⏳  SearXNG + `lescout search` / `lescout grok`
-Phase 3  ⏳  MCP adapter (Claude Code / Cursor native tool)
-Phase 4  ⏳  LeScout native brain (SQLite + FTS5)
-Phase 5  ⏳  Pi-5 deployment + Tailscale remote MCP
+Phase 0    ✓  GBrain wired as interim brain (Claude Code + pi MCP)
+Phase 1    ✓  Sandbox + `lescout repo` end-to-end
+Phase 1.5  ✓  Multi-agent session discovery + `lescout session` (claude/pi/codex/cursor/gemini)
+Phase 1.6  ✓  Hierarchical `--help` + `lescout docs <github-url>`
+Phase 2    ⏳  SearXNG + `lescout search` / `lescout grok` + dual md/html storage
+Phase 3    ⏳  MCP adapter (Claude Code / Cursor native tool)
+Phase 4    ⏳  LeScout native brain (SQLite + FTS5)
+Phase 5    ⏳  Pi-5 deployment + Tailscale remote MCP
 ```
 
 ## Quickstart
@@ -24,11 +26,21 @@ docker build -t lescout/sandbox:latest docker/sandbox/
 # 2. Install deps
 bun install
 
-# 3. Use it
-lescout repo https://github.com/safishamsi/graphify
-# → clones in sandbox, extracts tree+manifests+READMEs, writes to brain
+# 3. Ingest
+lescout repo https://github.com/safishamsi/graphify   # scout a repo into brain
+lescout docs https://github.com/colinhacks/zod        # scout as docs (different slug + tag)
 
-# 4. Query the brain (via gbrain CLI, MCP, or any agent)
+# 4. Session discovery (across every agent harness)
+lescout session list --limit 10                       # claude/pi/codex/cursor/gemini
+lescout session list --agent codex --project mconnect
+lescout session resume <chat-id>                      # pick up where you left off
+
+# 5. Self-discoverable: agents call --help to learn the surface
+lescout help                                          # full reference
+lescout repo --help                                   # man-style per-command
+lescout session list --help                           # per-subcommand
+
+# 6. Query the brain (via gbrain CLI, MCP, or any agent)
 gbrain query "what does graphify do"
 ```
 
