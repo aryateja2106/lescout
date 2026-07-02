@@ -9,6 +9,10 @@ import {
   loadSession,
   renderSessionPage,
   sessionSlug,
+  sessionListItem,
+  sessionDisplayId,
+  sessionResumeCommand,
+  sessionSupport,
   type Agent,
 } from "../session.ts";
 import { writeToBrain } from "../brain.ts";
@@ -418,10 +422,16 @@ async function runSession(rest: string[]): Promise<number> {
     const projectFilter = getOpt(rest, "--project");
     const agentFilter = getOpt(rest, "--agent") as Agent | undefined;
     const useTable = rest.includes("--table");
+    const wantsJson = rest.includes("--json");
     const sessions = await listSessions({ limit, projectFilter, agentFilter });
 
     if (sessions.length === 0) {
-      console.log(dim("(no sessions found)"));
+      console.log(wantsJson ? "[]" : dim("(no sessions found)"));
+      return 0;
+    }
+
+    if (wantsJson) {
+      console.log(JSON.stringify(sessions.map(sessionListItem), null, 2));
       return 0;
     }
 
@@ -431,6 +441,76 @@ async function runSession(rest: string[]): Promise<number> {
     const wantsTable = useTable || (width >= 140 && !rest.includes("--cards"));
     if (wantsTable) printSessionTable(sessions, width);
     else printSessionCards(sessions, width);
+    return 0;
+  }
+
+  if (sub === "index") {
+    const limit = getNum(rest, "--limit") ?? 200;
+    const projectFilter = getOpt(rest, "--project");
+    const agentFilter = getOpt(rest, "--agent") as Agent | undefined;
+    const wantsJson = rest.includes("--json");
+    const sessions = await listSessions({ limit, projectFilter, agentFilter });
+    let indexed = 0;
+    let skipped = 0;
+    const errors: Array<{ id: string; error: string }> = [];
+    const slugs: string[] = [];
+
+    for (const meta of sessions) {
+      if (meta.parserSupport !== "full") {
+        skipped++;
+        continue;
+      }
+      try {
+        const detail = await loadSession(meta);
+        const slug = sessionSlug(detail);
+        await writeToBrain(slug, renderSessionPage(detail));
+        indexed++;
+        slugs.push(slug);
+      } catch (err) {
+        errors.push({ id: sessionDisplayId(meta), error: (err as Error).message.slice(0, 240) });
+      }
+    }
+
+    if (wantsJson) {
+      console.log(JSON.stringify({ indexed, skipped, errors, slugs }, null, 2));
+      return errors.length > 0 ? 1 : 0;
+    }
+
+    console.log(`indexed ${indexed} sessions into brain`);
+    if (skipped > 0) console.log(dim(`skipped ${skipped} metadata-only sessions`));
+    if (errors.length > 0) {
+      for (const e of errors.slice(0, 5)) console.error(`${e.id}: ${e.error}`);
+      return 1;
+    }
+    return 0;
+  }
+
+  if (sub === "resume-command") {
+    const id = rest[1];
+    if (!id) {
+      console.error("error: lescout session resume-command <chat-id>");
+      return 2;
+    }
+    let meta;
+    try {
+      meta = await resolveSession(id);
+    } catch (err) {
+      console.error((err as Error).message);
+      return 1;
+    }
+    if (!meta) {
+      console.error(`no session matches "${id}"`);
+      return 1;
+    }
+    const cmd = sessionResumeCommand(meta);
+    if (!cmd) {
+      console.error(
+        `${meta.agent}:${meta.shortId} has no trusted native resume command yet ` +
+          `(support: ${supportLabel(meta)})`,
+      );
+      return 1;
+    }
+    console.log(cmd);
     return 0;
   }
 
@@ -509,12 +589,13 @@ function printSessionCards(sessions: Awaited<ReturnType<typeof listSessions>>, w
 
     // Header line: ● id  agent  date  N lines  project
     const dot = color("●");
-    const idCell = bold(s.shortId);
+    const idCell = bold(sessionDisplayId(s));
     const agentCell = color(s.agent.padEnd(7));
     const dateCell = dim(date);
     const linesCell = dim(`${String(s.lineCount).padStart(4)} lines`);
+    const supportCell = dim(`[${supportLabel(s)}]`);
     const projCell = gray(proj);
-    const head = `${dot} ${idCell}  ${agentCell} ${dateCell}  ${linesCell}  ${projCell}`;
+    const head = `${dot} ${idCell}  ${agentCell} ${dateCell}  ${linesCell}  ${supportCell}  ${projCell}`;
     console.log(head);
 
     // Title line: indented, dimmed, smart-truncated to terminal width.
@@ -526,19 +607,20 @@ function printSessionCards(sessions: Awaited<ReturnType<typeof listSessions>>, w
   console.log("");
   console.log(
     dim(
-      `${sessions.length} sessions · use ——  lescout session list --limit N  ·  --agent claude|pi|codex|cursor|gemini  ·  --table for one-line rows`,
+      `${sessions.length} sessions · use ——  --limit N  ·  --agent claude|pi|codex|cursor|gemini  ·  --json  ·  resume-command <id>`,
     ),
   );
 }
 
 function printSessionTable(sessions: Awaited<ReturnType<typeof listSessions>>, width: number): void {
-  // Allocate column widths roughly: short=10 agent=8 date=12 lines=7 project=28 title=rest.
+  // Allocate column widths roughly: short=10 agent=8 date=12 lines=7 support=17 project=28 title=rest.
   const shortW = 10;
   const agentW = 8;
   const dateW = 12;
   const linesW = 7;
+  const supportW = 17;
   const projW = 28;
-  const titleW = Math.max(20, width - (shortW + agentW + dateW + linesW + projW));
+  const titleW = Math.max(20, width - (shortW + agentW + dateW + linesW + supportW + projW));
 
   // Header: dim, no color
   console.log(
@@ -547,6 +629,7 @@ function printSessionTable(sessions: Awaited<ReturnType<typeof listSessions>>, w
         "AGENT".padEnd(agentW) +
         "DATE".padEnd(dateW) +
         "LINES".padEnd(linesW) +
+        "SUPPORT".padEnd(supportW) +
         "PROJECT".padEnd(projW) +
         "TITLE",
     ),
@@ -559,15 +642,27 @@ function printSessionTable(sessions: Awaited<ReturnType<typeof listSessions>>, w
     const title = (s.title ?? "").replace(/\n/g, " ").trim();
 
     // Important: pad BEFORE wrapping in ANSI so width math stays right.
-    const shortP = s.shortId.padEnd(shortW);
+    const shortP = sessionDisplayId(s).padEnd(shortW);
     const agentP = s.agent.padEnd(agentW);
     const dateP = date.padEnd(dateW);
     const linesP = String(s.lineCount).padEnd(linesW);
+    const supportP = supportLabel(s).slice(0, supportW - 1).padEnd(supportW);
     const projP = proj.padEnd(projW);
     const titleT = smartTruncate(title, titleW);
 
-    console.log(`${shortP}${color(agentP)}${dim(dateP)}${linesP}${gray(projP)}${dim(titleT)}`);
+    console.log(`${shortP}${color(agentP)}${dim(dateP)}${linesP}${dim(supportP)}${gray(projP)}${dim(titleT)}`);
   }
+}
+
+function supportLabel(s: Parameters<typeof sessionSupport>[0]): string {
+  const support = sessionSupport(s);
+  const hasContext = support.includes("context");
+  const hasNativeResume = support.includes("native-resume");
+  if (support.includes("meta-only")) return "meta";
+  if (hasContext && hasNativeResume) return "ctx+resume";
+  if (hasContext) return "ctx";
+  if (hasNativeResume) return "resume";
+  return "unknown";
 }
 
 const code = await main();

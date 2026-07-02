@@ -101,28 +101,37 @@ Non-GitHub URLs (official doc sites with sitemap.xml) land in Phase 2 via
   session: {
     synopsis: "List / show / resume coding-agent sessions across all harnesses (claude·pi·codex·cursor·gemini·bob)",
     usage: [
-      "lescout session list [--limit N] [--project SUBSTR] [--agent NAME]",
+      "lescout session list [--limit N] [--project SUBSTR] [--agent NAME] [--json]",
+      "lescout session index [--limit N] [--project SUBSTR] [--agent NAME] [--json]",
       "lescout session show <chat-id>",
       "lescout session resume <chat-id>",
+      "lescout session resume-command <chat-id>",
     ],
     description: `Walks every on-disk session store LeScout knows about and shows
 a unified view across Claude Code · pi · Codex · Cursor · Gemini.
 
-  list   – newest-first table, columns: SHORT · AGENT · DATE · LINES · PROJECT · TITLE
-  show   – print a brain-ready summary of one session to stdout
-  resume – write that summary into the brain so any agent can pick up
+  list           – newest-first table, columns: SHORT · AGENT · DATE · LINES · SUPPORT · PROJECT · TITLE
+  list --json    – stable machine-readable inventory for LeSearch AI / mobile UI
+  index          – write parser-supported sessions into the brain in bulk
+  show           – print a brain-ready summary of one session to stdout
+  resume         – write that summary into the brain so any agent can pick up
+  resume-command – print the native agent resume command when LeScout trusts it
 
-Brain slug: sessions/<flat-project>/<date>-<short-id> (gbrain caps at 2 slashes).`,
+Brain slug: sessions/<flat-project>/<date>-<display-id> (gbrain caps at 2 slashes).`,
     flags: [
       { flag: "--limit N", desc: "Cap results (default 20)" },
       { flag: "--project SUBSTR", desc: "Filter by cwd substring (case-insensitive)" },
       { flag: "--agent NAME", desc: "Filter: claude|pi|codex|cursor|gemini|bob" },
+      { flag: "--json", desc: "Emit stable JSON records with support/resume metadata" },
       { flag: "--table", desc: "One-line table (default: card view on narrow terms)" },
       { flag: "--cards", desc: "Force card view (default on terminals < 140 cols)" },
     ],
     examples: [
       { cmd: "lescout session list --limit 10" },
+      { cmd: "lescout session list --limit 3 --json" },
+      { cmd: "lescout session index --project lescout --limit 50" },
       { cmd: "lescout session list --project lescout --agent claude" },
+      { cmd: "lescout session resume-command c1a443ce" },
       { cmd: "lescout session resume c1a443ce" },
     ],
     seeAlso: ["lescout help context"],

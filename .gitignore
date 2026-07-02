@@ -51,3 +51,21 @@ logs/
 # OS-specific test artifacts
 coverage/
 *.lcov
+.env.local
+.env.*.local
+.env.production
+.env.development
+*.age-key.txt
+id_rsa
+id_ed25519
+*.p8
+service-account*.json
+credentials.json
+secrets.json
+.aws/
+target/
+.venv/
+venv/
+.next/
+__pycache__/
+DerivedData/

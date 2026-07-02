@@ -31,7 +31,9 @@ export type Agent = "claude" | "pi" | "codex" | "cursor" | "gemini" | "bob";
 export interface SessionMeta {
   agent: Agent;
   chatId: string; // full uuid (or path hash for cursor/gemini)
-  shortId: string; // first 8 chars
+  shortId: string; // legacy short handle, usually first 8 chars
+  /** Collision-resistant handle for UI/list output. UUIDv7 prefixes collide often. */
+  displayId?: string;
   jsonlPath: string;
   projectDir: string; // sanitized cwd or workspace name
   cwd: string; // unsanitized cwd (best-effort)
@@ -42,6 +44,27 @@ export interface SessionMeta {
   sizeBytes: number;
   /** Only Claude / pi / Codex have full parser support today. */
   parserSupport: "full" | "meta-only";
+  usage: SessionUsage | null;
+}
+
+export interface SessionUsage {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cachedInputTokens: number | null;
+  cacheWriteTokens: number | null;
+  reasoningOutputTokens: number | null;
+  totalTokens: number | null;
+  costUsd: number | null;
+  model: string | null;
+  source: "provider-log" | "codeburn" | "estimated" | "unknown";
+}
+
+export type SessionResumeSupport = "context" | "native-resume" | "meta-only";
+
+export interface SessionListItem extends SessionMeta {
+  support: SessionResumeSupport[];
+  resumeCommand: string | null;
+  contextSlug: string | null;
 }
 
 export interface SessionDetail extends SessionMeta {
@@ -53,6 +76,53 @@ export interface SessionDetail extends SessionMeta {
   filesTouched: Array<{ path: string; tool: string; count: number }>;
   totalAssistantChars: number;
   durationMs: number;
+}
+
+export function sessionResumeCommand(s: Pick<SessionMeta, "agent" | "chatId" | "parserSupport">): string | null {
+  if (s.parserSupport !== "full") return null;
+  const id = shellArg(s.chatId);
+  switch (s.agent) {
+    case "claude":
+      return `claude --resume ${id}`;
+    case "pi":
+      return `pi --resume ${id}`;
+    case "codex":
+      return `codex resume ${id}`;
+    case "cursor":
+    case "gemini":
+    case "bob":
+      return null;
+  }
+}
+
+export function sessionSupport(s: SessionMeta): SessionResumeSupport[] {
+  const support: SessionResumeSupport[] = [];
+  if (s.parserSupport === "full") support.push("context");
+  else support.push("meta-only");
+  if (sessionResumeCommand(s)) support.push("native-resume");
+  return support;
+}
+
+export function sessionListItem(s: SessionMeta): SessionListItem {
+  return {
+    ...s,
+    displayId: sessionDisplayId(s),
+    support: sessionSupport(s),
+    resumeCommand: sessionResumeCommand(s),
+    contextSlug: s.parserSupport === "full" ? sessionSlug(s) : null,
+  };
+}
+
+export function sessionDisplayId(s: Pick<SessionMeta, "chatId" | "shortId" | "displayId">): string {
+  if (s.displayId) return s.displayId;
+  const uuid = s.chatId.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-([0-9a-f]{12})/i);
+  if (uuid?.[1]) return uuid[1].slice(0, 8);
+  return s.shortId;
+}
+
+function shellArg(value: string): string {
+  if (/^[A-Za-z0-9._:@/+,\-]+$/.test(value)) return value;
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 /** List sessions across every supported agent harness, newest first. */
@@ -128,6 +198,7 @@ export async function listSessions(
         lineCount: 0,
         sizeBytes: 0,
         parserSupport: "meta-only",
+        usage: null,
       });
     }
   }
@@ -151,6 +222,7 @@ export async function listSessions(
         lineCount: 0,
         sizeBytes: 0,
         parserSupport: "meta-only",
+        usage: null,
       });
     }
   }
@@ -254,6 +326,7 @@ async function quickMetaBobJson(jsonPath: string, projectHash: string): Promise<
     lineCount,
     sizeBytes: st.size,
     parserSupport: jsonParseOk ? "full" : "meta-only",
+    usage: null,
   };
 }
 
@@ -326,6 +399,8 @@ async function quickMetaJsonl(jsonlPath: string, projectDir: string, agent: Agen
   let startedAt: string | null = null;
   let endedAt: string | null = null;
   let firstUserHint: string | null = null;
+  let usage: SessionUsage | null = null;
+  let model: string | null = null;
   let lineCount = 0;
 
   if (st.size < 4_000_000) {
@@ -337,6 +412,18 @@ async function quickMetaJsonl(jsonlPath: string, projectDir: string, agent: Agen
         const d = JSON.parse(ln);
         if (!startedAt && d.timestamp) startedAt = d.timestamp;
         if (d.timestamp) endedAt = d.timestamp;
+        if (!model) {
+          const maybeModel =
+            d?.payload?.model ??
+            d?.payload?.model_slug ??
+            d?.turn_context?.payload?.model;
+          if (typeof maybeModel === "string" && maybeModel.trim()) model = maybeModel;
+        }
+        const tokenUsage = readTokenUsageEvent(d, model);
+        if (tokenUsage) {
+          usage = tokenUsage;
+          if (tokenUsage.model) model = tokenUsage.model;
+        }
         if (d.type === "ai-title") {
           const t = d.title ?? d.message?.title ?? d.message?.content;
           if (typeof t === "string") title = t;
@@ -370,6 +457,7 @@ async function quickMetaJsonl(jsonlPath: string, projectDir: string, agent: Agen
     agent,
     chatId,
     shortId: chatId.slice(0, 8),
+    displayId: sessionDisplayId({ chatId, shortId: chatId.slice(0, 8) }),
     jsonlPath,
     projectDir,
     cwd,
@@ -379,6 +467,25 @@ async function quickMetaJsonl(jsonlPath: string, projectDir: string, agent: Agen
     lineCount,
     sizeBytes: st.size,
     parserSupport: "full",
+    usage,
+  };
+}
+
+function readTokenUsageEvent(d: any, model: string | null): SessionUsage | null {
+  if (d?.type !== "event_msg" || d?.payload?.type !== "token_count") return null;
+  const total = d.payload?.info?.total_token_usage;
+  if (!total || typeof total !== "object") return null;
+  const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  return {
+    inputTokens: n(total.input_tokens),
+    outputTokens: n(total.output_tokens),
+    cachedInputTokens: n(total.cached_input_tokens),
+    cacheWriteTokens: n(total.cache_write_tokens),
+    reasoningOutputTokens: n(total.reasoning_output_tokens),
+    totalTokens: n(total.total_tokens),
+    costUsd: null,
+    model,
+    source: "provider-log",
   };
 }
 
@@ -386,7 +493,11 @@ async function quickMetaJsonl(jsonlPath: string, projectDir: string, agent: Agen
 export async function resolveSession(idOrPath: string): Promise<SessionMeta | null> {
   const all = await listSessions({ limit: 10000 });
   const matches = all.filter(
-    (s) => s.chatId === idOrPath || s.chatId.startsWith(idOrPath) || s.shortId === idOrPath,
+    (s) =>
+      s.chatId === idOrPath ||
+      s.chatId.startsWith(idOrPath) ||
+      s.shortId === idOrPath ||
+      sessionDisplayId(s) === idOrPath,
   );
   if (matches.length === 0) return null;
   if (matches.length > 1) {
@@ -491,7 +602,9 @@ export async function loadSession(meta: SessionMeta): Promise<SessionDetail> {
 
 /** Render a session detail as a brain markdown page. */
 export function renderSessionPage(d: SessionDetail): string {
-  const title = (d.title ?? d.firstUserMessage.slice(0, 80) ?? `Session ${d.shortId}`).replace(/\n/g, " ").trim();
+  const title = (d.title || d.firstUserMessage.slice(0, 80) || `Session ${sessionDisplayId(d)}`)
+    .replace(/\n/g, " ")
+    .trim();
   const slug = sessionSlug(d);
   const totalTools = Object.values(d.toolCounts).reduce((a, b) => a + b, 0);
   const minutes = Math.round(d.durationMs / 60000);
@@ -511,6 +624,9 @@ export function renderSessionPage(d: SessionDetail): string {
     `user_turns: ${d.allUserMessages.length}`,
     `assistant_chunks: ${d.assistantTextChunks.length}`,
     `tool_calls: ${totalTools}`,
+    `tokens_total: ${d.usage?.totalTokens ?? ""}`,
+    `tokens_input: ${d.usage?.inputTokens ?? ""}`,
+    `tokens_output: ${d.usage?.outputTokens ?? ""}`,
     `tags: [session, ${d.agent}]`,
     "---",
     "",
@@ -519,8 +635,11 @@ export function renderSessionPage(d: SessionDetail): string {
   const body: string[] = [];
   body.push(`# ${title}`);
   body.push("");
-  body.push(`> ${agentLabel(d.agent)} session \`${d.shortId}\`${d.cwd ? ` · ${d.cwd}` : ""}`);
+  body.push(`> ${agentLabel(d.agent)} session \`${sessionDisplayId(d)}\`${d.cwd ? ` · ${d.cwd}` : ""}`);
   body.push(`> ${minutes} min · ${d.allUserMessages.length} user turns · ${totalTools} tool calls`);
+  if (d.usage?.totalTokens) {
+    body.push(`> ${d.usage.totalTokens.toLocaleString()} tokens logged from ${d.usage.source}`);
+  }
   body.push("");
 
   body.push("## Original task");
@@ -567,7 +686,8 @@ export function renderSessionPage(d: SessionDetail): string {
 
   body.push("## How to resume");
   body.push("");
-  body.push(`The user was working in \`${d.cwd}\`. Original ask above; ${d.allUserMessages.length - 1} follow-ups recorded. Last activity ${d.endedAt}. Read the original task + last assistant tail to recover state.`);
+  const followUps = Math.max(0, d.allUserMessages.length - 1);
+  body.push(`The user was working in \`${d.cwd}\`. Original ask above; ${followUps} follow-ups recorded. Last activity ${d.endedAt}. Read the original task + last assistant tail to recover state.`);
   body.push("");
   body.push(`---`);
   body.push(`*Auto-extracted from \`${d.jsonlPath}\` by \`lescout session\` — slug \`${slug}\`*`);
@@ -655,7 +775,7 @@ async function loadBobSession(meta: SessionMeta): Promise<SessionDetail> {
 
 export function sessionSlug(d: SessionMeta): string {
   // gbrain rejects slugs with 4+ slashes. Use exactly 2 slashes.
-  // sessions/<agent>_<flat-project>/<date>-<short-id>
+  // sessions/<agent>_<flat-project>/<date>-<display-id>
   const proj =
     d.projectDir
       .replace(/^-Users-aryateja-/, "")
@@ -665,5 +785,5 @@ export function sessionSlug(d: SessionMeta): string {
       .toLowerCase()
       .slice(0, 50) || "unknown";
   const date = (d.startedAt ?? "").slice(0, 10);
-  return `sessions/${d.agent}_${proj}/${date}-${d.shortId}`;
+  return `sessions/${d.agent}_${proj}/${date}-${sessionDisplayId(d)}`;
 }
